@@ -12,6 +12,10 @@
 
 https://github.com/LiDu-china/dsh-dafeiyu-emotion
 
+## Icon
+
+https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/icon-512.png
+
 ## One-line description
 
 让 DSH 里的大肥鱼听得见、听得懂，并按对方的语气和情绪自然回复。

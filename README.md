@@ -16,7 +16,7 @@
 
 </div>
 
-![BigFish Emotion Ear preview](docs/preview.svg)
+![BigFish Emotion Ear preview](docs/preview.png)
 
 > 预览为功能示意图，实际界面以当前 DSH 版本为准。
 
