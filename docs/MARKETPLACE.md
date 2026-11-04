@@ -67,7 +67,7 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ```
 
-The 1024Store entry is live and currently uses the GitHub source. After the npm package is published, the store switches to npm one-click install automatically.
+The 1024Store entry is live and currently browse-only. After the npm package is published, the store adds npm one-click install automatically.
 
 ## Privacy
 

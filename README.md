@@ -84,7 +84,7 @@
 dsh-dafeiyu-emotion
 ```
 
-在 npm 正式包发布前，商店条目使用 GitHub 源安装。发布后会自动切换为 npm 一键安装，无需重新投稿。
+在 npm 正式包发布前，1024Store 条目为浏览态；发布后会自动出现 npm 一键安装入口，无需重新投稿。现阶段请使用下面的 GitHub 源安装。
 
 ### 通过 GitHub 源安装
 
@@ -262,7 +262,7 @@ dsh-dafeiyu-emotion/
 dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ```
 
-The plugin is listed in [1024Store](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion); its npm one-click install will become available automatically after the first npm release. A direct tarball is also attached to [GitHub Releases](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest).
+The plugin is listed in [1024Store](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion). Until the first npm release it is browse-only; publishing to npm adds the one-click install automatically. Use the GitHub-source command above, or the tarball attached to [GitHub Releases](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest), today.
 
 Then enable **Voice Input** in DSH Plugins and prepare its local model. For the enhanced mode, set `backendRoot` to a voice-sense checkout with `.venv-ser`.
 
