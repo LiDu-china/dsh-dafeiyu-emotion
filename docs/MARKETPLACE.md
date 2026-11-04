@@ -1,0 +1,74 @@
+# Marketplace submission copy
+
+## Name
+
+大肥鱼 · 情绪耳朵
+
+## Package
+
+`dsh-dafeiyu-emotion`
+
+## Repository
+
+https://github.com/LiDu-china/dsh-dafeiyu-emotion
+
+## One-line description
+
+让 DSH 里的大肥鱼听得见、听得懂，并按对方的语气和情绪自然回复。
+
+## Short description
+
+在 DSH 输入框旁边加一个 🐋 鱼耳：本地转写语音，分析语速/停顿/音高/能量和文字线索，生成克制的情绪上下文，再自动发送给大肥鱼回复。默认不把音频上传到云端。
+
+## Long description
+
+大肥鱼 · 情绪耳朵是一个 DeepSeek Harness 语音 companion 插件。它把一次说话变成一条有情绪上下文的对话：
+
+1. 点击 composer 旁的鱼耳，录一句话；
+2. 优先复用 DSH 自带 Voice Input/SenseVoice 做本地转写；
+3. 浏览器提取语速、停顿、基频、音高变化、能量等声学特征；
+4. 可选中英文情绪词表与声学原型融合，输出情绪、置信度、愉悦度、唤醒度；
+5. 生成“先承接情绪、再回答问题”的受控 prompt；
+6. 自动填入并发送到当前会话；
+7. 如果本机部署了 VoiceSense，可切换到 SenseVoice + emotion2vec 增强模式。
+
+插件不常驻监听、不读屏幕、不声称读心。音频只进入本机临时目录，分析结束后删除。
+
+## Categories
+
+- Voice
+- AI Companion
+- Accessibility
+- Productivity
+- Emotion / Sentiment
+
+## Keywords
+
+`dsh`, `dsh-plugin`, `deepseek-harness`, `dsh-dafeiyu`, `voice`, `emotion`, `sensevoice`, `emotion2vec`, `speech-emotion-recognition`, `voice-assistant`
+
+## Requirements
+
+- DSH Desktop 0.2.x / DSH 0.2.1-rc.2+
+- Microphone permission
+- Lightweight mode: enable DSH Voice Input and prepare its local model
+- Enhanced mode: a local VoiceSense checkout with `.venv-ser` and cached models
+
+## Install
+
+```bash
+dsh plugin --profile desktop add dsh-dafeiyu-emotion
+```
+
+Or install `dsh-dafeiyu-emotion` from the DSH plugin marketplace.
+
+## Privacy
+
+No audio upload. No screen capture. No persistent microphone. Temporary WAV is deleted after analysis.
+
+## Maintainer
+
+[@LiDu-china](https://github.com/LiDu-china)
+
+## License
+
+MIT

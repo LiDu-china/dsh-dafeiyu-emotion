@@ -1,0 +1,13 @@
+node_modules/
+*.tgz
+*.log
+__pycache__/
+*.py[cod]
+.env
+.env.*
+.DS_Store
+Thumbs.db
+DEPLOYMENT.md
+pnpm-install*.log
+dump-config.log
+install.log

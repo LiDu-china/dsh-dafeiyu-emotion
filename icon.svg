@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="BigFish Emotion Ear">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071a2d"/>
+      <stop offset="1" stop-color="#0a3857"/>
+    </linearGradient>
+    <linearGradient id="fish" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#78d8ff"/>
+      <stop offset="1" stop-color="#3c8fe8"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe19a"/>
+      <stop offset="1" stop-color="#ffb547"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#sea)"/>
+  <circle cx="395" cy="120" r="54" fill="#4ecdc4" opacity=".16"/>
+  <circle cx="112" cy="408" r="78" fill="#3c8fe8" opacity=".12"/>
+  <path d="M98 274c0-73 63-126 150-126 80 0 143 50 143 117 0 61-53 108-126 108-42 0-79-14-105-38l-52 32 10-55c-12-11-20-24-20-38Z" fill="url(#fish)" filter="url(#glow)"/>
+  <path d="M239 259c23-28 59-45 100-45 28 0 52 7 71 20-13 14-24 28-31 44 14 9 25 21 33 35-19 7-40 11-63 11h-14l-37 38 6-48c-26-12-48-31-65-55Z" fill="#0c253d" opacity=".55"/>
+  <circle cx="334" cy="222" r="11" fill="#071a2d"/>
+  <path d="M160 414v-55c0-17 14-31 31-31s31 14 31 31v55" fill="none" stroke="url(#mic)" stroke-width="18" stroke-linecap="round"/>
+  <rect x="156" y="348" width="70" height="74" rx="35" fill="url(#mic)"/>
+  <path d="M136 385v8c0 33 27 60 60 60s60-27 60-60v-8M196 453v26M168 479h56" fill="none" stroke="#ffe19a" stroke-width="14" stroke-linecap="round"/>
+  <path d="M430 244c12 20 12 43 0 63M455 226c22 32 22 72 0 104" fill="none" stroke="#7ee3f2" stroke-width="10" stroke-linecap="round" opacity=".75"/>
+</svg>

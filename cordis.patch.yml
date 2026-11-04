@@ -1,0 +1,33 @@
+- insert:
+    - id: dsh-dafeiyu
+      name: dsh-dafeiyu
+      config:
+        enabled: true
+        scale: 1
+        bubbleScale: 1
+        activityLevel: normal
+        reducedMotion: false
+        soundEnabled: true
+        soundStates:
+          - SUCCESS
+          - ERROR
+        bubbleMode: always
+        bubbleStates:
+          - SUCCESS
+          - ERROR
+          - WAITING
+        includeSubagents: false
+        webOverlay: false
+        clientTarget: auto
+        balanceEnabled: true
+        balanceSource: auto
+    - id: dsh-dafeiyu-emotion
+      name: dsh-dafeiyu-emotion
+      config:
+        enabled: true
+        backendRoot: ""
+        pythonPath: ""
+        language: zh
+        maxAudioBytes: 12582912
+        startupTimeoutMs: 180000
+        requestTimeoutMs: 180000
