@@ -67,6 +67,7 @@
 ## 功能
 
 - 🎙️ 输入框内录音，不需要跳到另一个应用；
+- ⌨️ DSH 原生语音快捷键，可在快捷键设置中自行改键；
 - 🐋 大肥鱼主题的“鱼耳”入口，和普通对话共用同一个 composer；
 - 🧠 情绪标签：喜悦 / 低落 / 生气 / 紧张 / 惊讶 / 厌烦 / 平静；
 - 📈 额外给出 confidence、valence、arousal 和语气摘要；
@@ -106,12 +107,31 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.2.0.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.0/dsh-dafeiyu-emotion-0.2.0.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.0.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.2.1.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.1/dsh-dafeiyu-emotion-0.2.1.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.1.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。
+
+## 语音快捷键
+
+插件会向 DSH 注册一个原生快捷键命令。打开：
+
+```text
+设置 → 快捷键 → 搜索“大肥鱼语音”
+```
+
+即可改成你习惯的组合。默认值：
+
+| 客户端 | 默认快捷键 |
+|---|---|
+| DSH Desktop（Windows / Linux / macOS） | `Alt+V` |
+| DSH Web（Windows） | `Ctrl+Alt+V` |
+| DSH Web（macOS） | `Cmd+Option+V` |
+| DSH Web（Linux） | 默认未绑定，请在快捷键设置中指定 |
+
+空闲时按一次开始录音；录音中再按一次会结束并分析。快捷键需要包含 `Ctrl`、`Alt`、`Shift` 或 `Cmd` 等修饰键，不能设置成裸字母键。
 
 ## 启用 Voice Input（轻量模式）
 
@@ -260,6 +280,7 @@ dsh-dafeiyu-emotion/
 ### Highlights
 
 - One-click microphone activity inside the DSH composer;
+- A native DSH voice shortcut you can rebind in Settings → Shortcuts;
 - Local transcription via DSH Voice Input/SenseVoice;
 - Lightweight prosody + keyword emotion estimation with no Python requirement;
 - Optional high-accuracy VoiceSense backend with SenseVoice + emotion2vec;
@@ -275,6 +296,8 @@ dsh plugin --profile desktop add dsh-dafeiyu-emotion
 The package is live on [npm](https://www.npmjs.com/package/dsh-dafeiyu-emotion) and listed in [1024Store](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion). The store's one-click entry refreshes automatically. A GitHub-source install and a tarball on [GitHub Releases](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest) are also available.
 
 Then enable **Voice Input** in DSH Plugins and prepare its local model. For the enhanced mode, set `backendRoot` to a voice-sense checkout with `.venv-ser`.
+
+The shortcut command is listed as **BigFish voice: start / stop**. Desktop defaults to `Alt+V`; Web defaults to `Ctrl+Alt+V` on Windows, `Cmd+Option+V` on macOS, and is unbound on Linux Web until you choose a binding.
 
 ### Limitations
 

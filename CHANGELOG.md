@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Added a native DSH voice shortcut, configurable from DSH keyboard settings.
+- The shortcut starts recording when idle and stops/analyzes recording on a second press.
+- Refreshed the project icon and README key visual with the blue whale-girl character artwork.
+
 ## 0.2.0
 
 - Added a lightweight mode using DSH Voice Input and browser-side prosody analysis.

@@ -33,12 +33,13 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 大肥鱼 · 情绪耳朵是一个 DeepSeek Harness 语音 companion 插件。它把一次说话变成一条有情绪上下文的对话：
 
 1. 点击 composer 旁的鱼耳，录一句话；
-2. 优先复用 DSH 自带 Voice Input/SenseVoice 做本地转写；
-3. 浏览器提取语速、停顿、基频、音高变化、能量等声学特征；
-4. 可选中英文情绪词表与声学原型融合，输出情绪、置信度、愉悦度、唤醒度；
-5. 生成“先承接情绪、再回答问题”的受控 prompt；
-6. 自动填入并发送到当前会话；
-7. 如果本机部署了 VoiceSense，可切换到 SenseVoice + emotion2vec 增强模式。
+2. 可使用 DSH 原生快捷键开始/停止录音，并在快捷键设置中自由改键；
+3. 优先复用 DSH 自带 Voice Input/SenseVoice 做本地转写；
+4. 浏览器提取语速、停顿、基频、音高变化、能量等声学特征；
+5. 可选中英文情绪词表与声学原型融合，输出情绪、置信度、愉悦度、唤醒度；
+6. 生成“先承接情绪、再回答问题”的受控 prompt；
+7. 自动填入并发送到当前会话；
+8. 如果本机部署了 VoiceSense，可切换到 SenseVoice + emotion2vec 增强模式。
 
 插件不常驻监听、不读屏幕、不声称读心。音频只进入本机临时目录，分析结束后删除。
 
@@ -67,7 +68,7 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-Published as `dsh-dafeiyu-emotion@0.2.0` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
+Published as `dsh-dafeiyu-emotion@0.2.1` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
 
 ## Privacy
 
