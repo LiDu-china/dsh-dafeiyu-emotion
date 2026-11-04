@@ -64,10 +64,10 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 ## Install
 
 ```bash
-dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
+dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-The 1024Store entry is live and currently browse-only. After the npm package is published, the store adds npm one-click install automatically.
+Published as `dsh-dafeiyu-emotion@0.2.0` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
 
 ## Privacy
 

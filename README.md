@@ -9,6 +9,7 @@
 本地语音转写 · 语气/情绪分析 · 情绪化回复 · 自动发送 · 音频不上传
 
 [![1024Store](https://img.shields.io/badge/1024Store-已收录-0ea5e9?style=flat-square)](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion)
+[![npm](https://img.shields.io/npm/v/dsh-dafeiyu-emotion?style=flat-square)](https://www.npmjs.com/package/dsh-dafeiyu-emotion)
 [![Release](https://img.shields.io/github/v/release/LiDu-china/dsh-dafeiyu-emotion?style=flat-square)](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest)
 [![GitHub](https://img.shields.io/badge/GitHub-LiDu--china-181717?style=flat-square&logo=github)](https://github.com/LiDu-china/dsh-dafeiyu-emotion)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -84,15 +85,21 @@
 dsh-dafeiyu-emotion
 ```
 
-在 npm 正式包发布前，1024Store 条目为浏览态；发布后会自动出现 npm 一键安装入口，无需重新投稿。现阶段请使用下面的 GitHub 源安装。
+`dsh-dafeiyu-emotion` 已发布到 npm。1024Store 会自动刷新一键安装入口；如果客户端尚未缓存到新版本，可以直接使用下面的 npm 命令。
+
+### 通过 npm
+
+```bash
+dsh plugin --profile desktop add dsh-dafeiyu-emotion
+```
+
+DSH Web 使用 `--profile web`。安装后启用 `dsh-dafeiyu-emotion`，再按提示启用 DSH 自带 **Voice Input**（轻量模式），或配置本地增强后端。
 
 ### 通过 GitHub 源安装
 
 ```bash
 dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ```
-
-DSH Web 使用 `--profile web`。安装后启用 `dsh-dafeiyu-emotion`，再按提示启用 DSH 自带 **Voice Input**（轻量模式），或配置本地增强后端。
 
 ### 通过 Release tarball
 
@@ -259,10 +266,10 @@ dsh-dafeiyu-emotion/
 ### Install
 
 ```bash
-dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
+dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-The plugin is listed in [1024Store](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion). Until the first npm release it is browse-only; publishing to npm adds the one-click install automatically. Use the GitHub-source command above, or the tarball attached to [GitHub Releases](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest), today.
+The package is live on [npm](https://www.npmjs.com/package/dsh-dafeiyu-emotion) and listed in [1024Store](https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion). The store's one-click entry refreshes automatically. A GitHub-source install and a tarball on [GitHub Releases](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/latest) are also available.
 
 Then enable **Voice Input** in DSH Plugins and prepare its local model. For the enhanced mode, set `backendRoot` to a voice-sense checkout with `.venv-ser`.
 
