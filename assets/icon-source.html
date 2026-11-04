@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 512px;
+      height: 512px;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+    .icon {
+      position: relative;
+      width: 512px;
+      height: 512px;
+      overflow: hidden;
+      border-radius: 112px;
+      border: 2px solid #39738d;
+      background:
+        radial-gradient(circle at 76% 13%, rgba(109, 235, 239, .28), transparent 26%),
+        radial-gradient(circle at 20% 88%, rgba(69, 139, 245, .25), transparent 38%),
+        linear-gradient(145deg, #031522 0%, #082a3f 55%, #0c3c54 100%);
+      box-shadow: inset 0 0 0 1px rgba(177, 241, 255, .08);
+    }
+    .orb {
+      position: absolute;
+      left: 48px;
+      top: 38px;
+      width: 416px;
+      height: 416px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #ffffff 0%, #f1fbff 58%, #caeafa 100%);
+      box-shadow:
+        0 0 48px rgba(90, 220, 239, .38),
+        0 30px 55px rgba(0, 10, 20, .45),
+        inset 0 0 0 2px rgba(63, 130, 167, .22);
+    }
+    .portrait {
+      position: absolute;
+      left: 106px;
+      top: 68px;
+      width: 300px;
+      height: 374px;
+      object-fit: contain;
+      filter: drop-shadow(0 16px 16px rgba(20, 54, 87, .2));
+    }
+    .waves {
+      position: absolute;
+      right: 12px;
+      top: 134px;
+      width: 88px;
+      height: 164px;
+      opacity: .88;
+    }
+    .badge {
+      position: absolute;
+      right: 34px;
+      bottom: 34px;
+      width: 94px;
+      height: 94px;
+      border-radius: 28px;
+      background: linear-gradient(145deg, #8ff2ff, #4f9bf2);
+      border: 3px solid rgba(232, 252, 255, .92);
+      box-shadow: 0 12px 28px rgba(0, 18, 35, .42);
+      display: grid;
+      place-items: center;
+    }
+    .badge svg { width: 52px; height: 52px; }
+    .shimmer {
+      position: absolute;
+      left: 72px;
+      top: 58px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #b9f6ff;
+      box-shadow: 0 0 18px #6ce4ef;
+    }
+  </style>
+</head>
+<body>
+  <div class="icon">
+    <div class="orb"></div>
+    <img class="portrait" src="bigfish-chibi-cutout.png" alt="">
+    <div class="shimmer"></div>
+    <svg class="waves" viewBox="0 0 90 170" fill="none" aria-hidden="true">
+      <path d="M12 43c21 24 21 61 0 85" stroke="#78eef8" stroke-width="6" stroke-linecap="round"/>
+      <path d="M34 23c34 39 34 86 0 125" stroke="#5ccfe9" stroke-width="5" stroke-linecap="round" opacity=".72"/>
+      <path d="M56 4c47 53 47 111 0 164" stroke="#4c97ee" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+      <circle cx="9" cy="85" r="5" fill="#a8f8ff"/>
+    </svg>
+    <div class="badge">
+      <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <rect x="25" y="10" width="14" height="25" rx="7" fill="#07304a"/>
+        <path d="M18 31c0 8 6 14 14 14s14-6 14-14M32 45v9M24 54h16" stroke="#07304a" stroke-width="4.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

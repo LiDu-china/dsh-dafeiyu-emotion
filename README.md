@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="icon.svg" width="128" alt="BigFish Emotion Ear icon">
+<img src="assets/icon-512.png" width="128" alt="大肥鱼 · 情绪耳朵插件图标">
 
 # 大肥鱼 · 情绪耳朵
 
@@ -18,9 +18,11 @@
 
 </div>
 
-![BigFish Emotion Ear preview](docs/preview.png)
+![大肥鱼 · 情绪耳朵角色主视觉](docs/preview.png)
 
 > 预览为功能示意图，实际界面以当前 DSH 版本为准。
+>
+> 角色主视觉采用蓝发鲸鱼少女的大肥鱼设定。
 
 ---
 
@@ -220,8 +222,9 @@ dsh-dafeiyu-emotion/
 ├─ lib/client.js             浏览器：录音、WAV、韵律特征、情绪 UI、自动发送
 ├─ backend/voice_worker.py   可选 VoiceSense 常驻 worker
 ├─ cordis.patch.yml          bundle 挂载：大肥鱼 + 情绪耳朵
-├─ docs/preview.svg          功能示意图
-├─ icon.svg                  插件图标
+├─ assets/icon-512.png       插件图标
+├─ assets/bigfish-*.png      角色主视觉素材
+├─ docs/preview.svg          可编辑预览源
 └─ package.json
 ```
 
