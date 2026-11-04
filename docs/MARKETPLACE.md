@@ -12,6 +12,10 @@
 
 https://github.com/LiDu-china/dsh-dafeiyu-emotion
 
+## 1024Store
+
+https://deepseek1024.com/plugins/LiDu-china/dsh-dafeiyu-emotion
+
 ## Icon
 
 https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/icon-512.png
@@ -60,10 +64,10 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 ## Install
 
 ```bash
-dsh plugin --profile desktop add dsh-dafeiyu-emotion
+dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ```
 
-Or install `dsh-dafeiyu-emotion` from the DSH plugin marketplace.
+The 1024Store entry is live and currently uses the GitHub source. After the npm package is published, the store switches to npm one-click install automatically.
 
 ## Privacy
 
