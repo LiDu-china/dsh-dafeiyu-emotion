@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'dsh-dafeiyu-emotion'
 export const inject = ['webServer']
@@ -29,6 +30,41 @@ const DEFAULTS = Object.freeze({
 
 const CONFIG_FIELDS = new Set(Object.keys(DEFAULTS))
 const LANGUAGES = new Set(['zh', 'en', 'auto'])
+
+export const Config = Schema.object({
+  enabled: Schema.boolean().default(true).description('启用情绪耳朵'),
+  backendRoot: Schema.string().default('').description('VoiceSense 项目目录'),
+  pythonPath: Schema.string().default('').description('Python 解释器路径'),
+  language: Schema.union([
+    Schema.const('zh').description('中文'),
+    Schema.const('en').description('English'),
+    Schema.const('auto').description('自动'),
+  ]).default('zh').description('识别语言'),
+  maxAudioBytes: Schema.number()
+    .min(256 * 1024)
+    .max(32 * 1024 * 1024)
+    .step(1024 * 1024)
+    .default(12 * 1024 * 1024)
+    .description('单次录音上限（字节）'),
+  startupTimeoutMs: Schema.number()
+    .min(10000)
+    .max(600000)
+    .step(5000)
+    .default(180000)
+    .description('后端启动超时（毫秒）'),
+  requestTimeoutMs: Schema.number()
+    .min(10000)
+    .max(600000)
+    .step(5000)
+    .default(180000)
+    .description('单次分析超时（毫秒）'),
+}).description('大肥鱼语音情绪耳朵')
+
+// DSH settings only exposes fields marked volatile, and the settings panel
+// writes through the same projection. Mark every field, not the root object.
+for (const [key, field] of Object.entries(Config.dict)) {
+  Config.dict[key] = field.volatile()
+}
 
 const EMOTION_ZH = Object.freeze({
   happy: '喜悦',
