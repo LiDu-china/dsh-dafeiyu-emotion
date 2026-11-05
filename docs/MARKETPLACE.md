@@ -68,7 +68,7 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-Published as `dsh-dafeiyu-emotion@0.2.1` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
+Published as `dsh-dafeiyu-emotion@0.2.2` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
 
 ## Privacy
 

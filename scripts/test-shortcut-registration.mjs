@@ -60,6 +60,9 @@ assert.deepEqual(registeredCommand?.defaults['web:windows'], {
   modifiers: ['primary', 'alt'],
 })
 assert.deepEqual(registeredCommand?.resolve(), { status: 'pass' })
+assert.equal(clientModule.__test.canUseVoiceShortcut('idle', false), true)
+assert.equal(clientModule.__test.canUseVoiceShortcut('analyzing', false), false)
+assert.equal(clientModule.__test.canUseVoiceShortcut('recording', true), false)
 
 delete globalThis.window
 console.log('shortcut registration ok')

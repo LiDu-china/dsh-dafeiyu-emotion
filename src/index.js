@@ -35,6 +35,20 @@ const EMOTION_ZH = Object.freeze({
   neutral: '平静',
 })
 
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
+function createAbortError() {
+  const error = new Error('已取消')
+  error.name = 'AbortError'
+  return error
+}
+
 function isLocalRequest(req) {
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket?.remoteAddress)) return false
   if (req.headers?.host) {
@@ -55,6 +69,7 @@ function isLocalRequest(req) {
 }
 
 function jsonResponse(res, status, body) {
+  if (res.writableEnded || res.destroyed) return
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -69,10 +84,14 @@ async function readJsonBody(req, limit) {
   let bytes = 0
   for await (const chunk of req) {
     bytes += chunk.length
-    if (bytes > limit) throw new Error('请求体过大，请缩短录音后重试')
+    if (bytes > limit) throw new HttpError(413, '请求体过大，请缩短录音后重试')
     chunks.push(chunk)
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw new HttpError(400, '请求体不是合法的 JSON')
+  }
 }
 
 function asNumber(value, fallback) {
@@ -325,11 +344,45 @@ class VoiceBackend {
     this.proc = null
     this.ready = null
     this.startup = null
+    this.startupAbort = null
     this.pending = new Map()
     this.nextId = 0
     this.queue = Promise.resolve()
     this.stderr = []
     this.lastError = null
+  }
+
+  noteError(message) {
+    this.lastError = message
+  }
+
+  /**
+   * Stop one worker deliberately. Unlike an unexpected exit this keeps the
+   * existing lastError (a timeout/cancel reason) instead of overwriting it
+   * with a generic "worker exited" message.
+   */
+  stopProcess(proc, { error, preserveLastError = false } = {}) {
+    if (this.proc !== proc) return
+    this.startupAbort?.()
+    this.proc = null
+    this.ready = false
+    if (!preserveLastError && error) this.lastError = error.message
+    const pending = [...this.pending.entries()]
+    this.pending.clear()
+    for (const [, slot] of pending) {
+      clearTimeout(slot.timer)
+      slot.reject(error || new Error('语音后端已停止'))
+    }
+    try {
+      proc.kill()
+    } catch {}
+  }
+
+  /** Abort the in-flight worker so a cancelled request cannot block the queue. */
+  cancel() {
+    const proc = this.proc
+    if (!proc) return
+    this.stopProcess(proc, { error: createAbortError(), preserveLastError: true })
   }
 
   status() {
@@ -347,11 +400,13 @@ class VoiceBackend {
     if (this.startup) return this.startup
     this.startup = new Promise((resolvePromise, rejectPromise) => {
       if (!existsSync(this.options.backendRoot)) {
-        rejectPromise(new Error(`语音后端目录不存在：${this.options.backendRoot}`))
+        this.lastError = `语音后端目录不存在：${this.options.backendRoot}`
+        rejectPromise(new Error(this.lastError))
         return
       }
       if (!existsSync(defaultWorker)) {
-        rejectPromise(new Error(`插件自带 worker 缺失：${defaultWorker}`))
+        this.lastError = `插件自带 worker 缺失：${defaultWorker}`
+        rejectPromise(new Error(this.lastError))
         return
       }
       const proc = spawn(this.python, [defaultWorker, this.options.backendRoot], {
@@ -374,24 +429,35 @@ class VoiceBackend {
       const timer = setTimeout(() => {
         if (settled) return
         settled = true
+        const error = new Error(`语音模型加载超时（>${Math.round(this.options.startupTimeoutMs / 1000)} 秒）`)
         this.lastError = '语音模型加载超时'
-        proc.kill()
-        rejectPromise(new Error(`${this.lastError}（>${Math.round(this.options.startupTimeoutMs / 1000)} 秒）`))
+        this.stopProcess(proc, { error, preserveLastError: true })
+        rejectPromise(error)
       }, this.options.startupTimeoutMs)
 
       const finishReady = (error) => {
+        if (this.proc !== proc) return
         if (settled) return
         settled = true
+        this.startupAbort = null
         clearTimeout(timer)
         if (error) {
           this.lastError = error.message
-          proc.kill()
+          this.stopProcess(proc, { error, preserveLastError: true })
           rejectPromise(error)
           return
         }
         this.ready = true
         this.lastError = null
         resolvePromise()
+      }
+
+      this.startupAbort = () => {
+        if (settled) return
+        settled = true
+        this.startupAbort = null
+        clearTimeout(timer)
+        rejectPromise(createAbortError())
       }
 
       const lines = createInterface({ input: proc.stdout })
@@ -435,28 +501,35 @@ class VoiceBackend {
       })
 
       const fail = (error) => {
-        this.ready = false
-        this.lastError = error.message
-        if (!settled) finishReady(error)
-        for (const slot of this.pending.values()) {
-          clearTimeout(slot.timer)
-          slot.reject(error)
+        if (this.proc !== proc) return
+        if (!settled) {
+          finishReady(error)
+          return
         }
-        this.pending.clear()
-        this.proc = null
-        this.startup = null
+        this.lastError = error.message
+        this.stopProcess(proc, { error, preserveLastError: true })
       }
       proc.on('error', fail)
       proc.on('exit', (code) => {
-        if (!settled) finishReady(new Error(`语音后端退出（code=${code}）`))
-        else if (this.proc === proc) {
-          const detail = this.stderr.slice(-6).join('\n')
-          fail(new Error(`语音后端意外退出（code=${code}）${detail ? `\n${detail}` : ''}`))
+        if (this.proc !== proc) return
+        if (!settled) {
+          finishReady(new Error(`语音后端退出（code=${code}）`))
+          return
         }
+        const detail = this.stderr.slice(-6).join('\n')
+        const error = new Error(`语音后端意外退出（code=${code}）${detail ? `\n${detail}` : ''}`)
+        this.lastError = error.message
+        this.stopProcess(proc, { error, preserveLastError: true })
       })
-      proc.stdin.on('error', () => {})
+      proc.stdin.on('error', (error) => {
+        if (this.proc !== proc) return
+        const wrapped = error instanceof Error ? error : new Error(String(error))
+        this.lastError = `语音后端写入失败：${wrapped.message}`
+        this.stopProcess(proc, { error: wrapped, preserveLastError: true })
+      })
     }).finally(() => {
       this.startup = null
+      this.startupAbort = null
     })
     return this.startup
   }
@@ -467,16 +540,36 @@ class VoiceBackend {
       const proc = this.proc
       if (!proc || proc.killed || !proc.stdin) throw new Error('语音后端不可用')
       const id = ++this.nextId
+      let settled = false
+      let timer
       const result = new Promise((resolvePromise, rejectPromise) => {
-        const timer = setTimeout(() => {
+        const finish = (callback, value) => {
+          if (settled) return
+          settled = true
+          if (timer) clearTimeout(timer)
           this.pending.delete(id)
+          callback(value)
+        }
+        timer = setTimeout(() => {
+          const error = new Error(`语音分析超时（>${Math.round(this.options.requestTimeoutMs / 1000)} 秒）`)
           this.lastError = '语音分析超时'
-          proc.kill()
-          rejectPromise(new Error(`${this.lastError}（>${Math.round(this.options.requestTimeoutMs / 1000)} 秒）`))
+          this.stopProcess(proc, { error, preserveLastError: true })
         }, this.options.requestTimeoutMs)
-        this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer })
+        this.pending.set(id, {
+          resolve: (message) => finish(resolvePromise, message),
+          reject: (error) => finish(rejectPromise, error),
+          timer,
+        })
       })
-      proc.stdin.write(`${JSON.stringify({ id, wav: wavPath, language: this.options.language })}\n`)
+      try {
+        proc.stdin.write(`${JSON.stringify({ id, wav: wavPath, language: this.options.language })}\n`)
+      } catch (error) {
+        const wrapped = error instanceof Error ? error : new Error(String(error))
+        this.lastError = `语音后端写入失败：${wrapped.message}`
+        this.stopProcess(proc, { error: wrapped, preserveLastError: true })
+        result.catch(() => {})
+        throw wrapped
+      }
       return result
     }
     const task = this.queue.then(run, run)
@@ -490,6 +583,7 @@ class VoiceBackend {
 
   async close() {
     const proc = this.proc
+    this.startupAbort?.()
     this.proc = null
     this.ready = false
     this.startup = null
@@ -515,7 +609,8 @@ function speechProviderReady(provider) {
   return phase === undefined || ['ready', 'standby', 'waking'].includes(phase)
 }
 
-async function transcribeWithSpeech(audio, options, service) {
+async function transcribeWithSpeech(audio, options, service, signal) {
+  if (signal?.aborted) throw createAbortError()
   if (!service) {
     throw new Error('DSH 自带语音输入未启用：请先在 插件 → Voice Input 中启用并准备本地模型，或配置 VoiceSense backendRoot')
   }
@@ -528,11 +623,30 @@ async function transcribeWithSpeech(audio, options, service) {
   const spec = service.resolve({
     audio,
     language: options.language || 'auto',
+    providerId: selected.id,
   })
-  const result = await service.transcribe(spec, AbortSignal.timeout(options.requestTimeoutMs))
+  const timeout = AbortSignal.timeout(options.requestTimeoutMs)
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
+  const result = await service.transcribe(spec, combined)
   const text = String(result?.text || '').trim()
   if (!text) throw new Error('DSH 语音输入没有返回文字')
   return text
+}
+
+function speechStatus(service) {
+  if (!service) return { ready: false, provider: null, phase: null }
+  try {
+    const snapshot = service.snapshot?.() ?? { providers: [], selection: {} }
+    const selected = snapshot.providers?.find((provider) => provider.id === snapshot.selection?.providerId)
+      ?? snapshot.providers?.[0]
+    return {
+      ready: Boolean(selected && speechProviderReady(selected)),
+      provider: selected?.id ?? null,
+      phase: selected?.preparation?.phase ?? null,
+    }
+  } catch {
+    return { ready: false, provider: null, phase: null }
+  }
 }
 
 function createAnalyzeHandler(options, backend, getSpeechToText) {
@@ -546,21 +660,37 @@ function createAnalyzeHandler(options, backend, getSpeechToText) {
       return
     }
     let tempDir
+    let controller
+    const onClose = () => {
+      if (res.writableEnded) return
+      controller?.abort()
+      backend.cancel()
+    }
     try {
-      const body = await readJsonBody(req, options.maxAudioBytes + 64 * 1024)
+      controller = new AbortController()
+      req.once?.('aborted', onClose)
+      res.once?.('close', onClose)
+      const bodyLimit = Math.ceil(options.maxAudioBytes / 3) * 4 + 64 * 1024
+      const body = await readJsonBody(req, bodyLimit)
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new HttpError(400, '请求体必须是 JSON 对象')
+      }
       const base64 = String(body.audioBase64 || '').replace(/^data:[^,]+,/, '')
-      if (!base64) throw new Error('缺少录音数据')
+      if (!base64) throw new HttpError(400, '缺少录音数据')
       const buffer = Buffer.from(base64, 'base64')
-      if (buffer.length < 400) throw new Error('录音太短，没有听清')
-      if (buffer.length > options.maxAudioBytes) throw new Error('录音太长，请控制在 30 秒以内')
+      if (buffer.length < 400) throw new HttpError(400, '录音太短，没有听清')
+      if (buffer.length > options.maxAudioBytes) throw new HttpError(413, '录音太大，请缩短录音后重试')
       if (buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
-        throw new Error('录音格式不是 WAV')
+        throw new HttpError(400, '录音格式不是 WAV')
       }
       tempDir = await mkdtemp(join(tmpdir(), 'dsh-dafeiyu-emotion-'))
       const wavPath = join(tempDir, 'voice.wav')
       await writeFile(wavPath, buffer)
       let analysis
       let localError
+      if (options.backendRoot && !existsSync(options.backendRoot)) {
+        localError = `语音后端目录不存在：${options.backendRoot}`
+      }
       if (options.backendRoot && existsSync(options.backendRoot)) {
         try {
           analysis = await backend.analyze(wavPath.replaceAll('\\', '/'))
@@ -568,9 +698,10 @@ function createAnalyzeHandler(options, backend, getSpeechToText) {
           localError = error instanceof Error ? error.message : String(error)
         }
       }
+      if (controller.signal.aborted) return
       if (!analysis) {
         try {
-          const transcript = await transcribeWithSpeech(buffer, options, getSpeechToText())
+          const transcript = await transcribeWithSpeech(buffer, options, getSpeechToText(), controller.signal)
           analysis = decorateAnalysis(buildFallbackAnalysis(transcript, body.prosody || {}))
         } catch (speechError) {
           const parts = []
@@ -579,13 +710,18 @@ function createAnalyzeHandler(options, backend, getSpeechToText) {
           throw new Error(parts.join('\n'))
         }
       }
+      if (controller.signal.aborted || res.writableEnded) return
       jsonResponse(res, 200, analysis)
     } catch (error) {
-      jsonResponse(res, 500, {
+      if (controller?.signal.aborted || res.writableEnded) return
+      const status = error instanceof HttpError ? error.status : 500
+      jsonResponse(res, status, {
         error: error instanceof Error ? error.message : String(error),
-        detail: backend.stderr?.slice(-8).join('\n') || undefined,
+        detail: status >= 500 ? backend.stderr?.slice(-8).join('\n') || undefined : undefined,
       })
     } finally {
+      req.off?.('aborted', onClose)
+      res.off?.('close', onClose)
       if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {})
     }
   }
@@ -596,6 +732,9 @@ export function apply(ctx, rawConfig = {}) {
   if (!options.enabled) return
   const logger = ctx.logger ?? console
   const backend = new VoiceBackend(options, logger)
+  if (options.backendRoot && !existsSync(options.backendRoot)) {
+    backend.noteError(`语音后端目录不存在：${options.backendRoot}`)
+  }
   let speechToText
   ctx.inject(['speechToText'], (speechCtx) => {
     speechToText = speechCtx.speechToText
@@ -615,13 +754,27 @@ export function apply(ctx, rawConfig = {}) {
             jsonResponse(res, 403, { error: '只允许本机访问' })
             return
           }
+          const speech = speechStatus(speechToText)
+          const backendConfigured = Boolean(options.backendRoot)
+          const backendAvailable = backendConfigured && existsSync(options.backendRoot)
+          if (backendAvailable && backend.lastError?.startsWith('语音后端目录不存在：')) {
+            backend.noteError(null)
+          }
           jsonResponse(res, 200, {
             ok: true,
             enabled: options.enabled,
             language: options.language,
-            engine: 'SenseVoice + emotion2vec',
-            mode: options.backendRoot ? 'enhanced-local-backend' : 'dsh-speech-prosody',
-            dshSpeechReady: Boolean(speechToText),
+            engine: backendAvailable ? 'SenseVoice + emotion2vec' : 'DSH Speech + prosody',
+            mode: !backendConfigured
+              ? 'dsh-speech-prosody'
+              : backendAvailable
+                ? 'enhanced-local-backend'
+                : 'enhanced-backend-missing',
+            dshSpeechReady: speech.ready,
+            speechProvider: speech.provider,
+            speechPhase: speech.phase,
+            backendConfigured,
+            backendAvailable,
             ...backend.status(),
           })
         },

@@ -96,6 +96,7 @@ def main() -> int:
         if not line:
             continue
         request: dict[str, Any] = {}
+        request_id: Any = None
         try:
             request = json.loads(line)
             if request.get("type") == "shutdown":
@@ -175,15 +176,17 @@ def main() -> int:
             detail = traceback.format_exc()
             sys.stderr.write(detail)
             emit({
-                "id": request.get("id"),
+                "id": request_id,
                 "ok": False,
                 "error": f"{type(exc).__name__}: {exc}",
             })
 
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            emotion.close()
-            asr.close()
+            try:
+                emotion.close()
+            finally:
+                asr.close()
     except Exception:
         sys.stderr.write(traceback.format_exc())
     return 0

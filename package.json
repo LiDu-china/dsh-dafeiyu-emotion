@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-emotion",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "大肥鱼语音情绪耳朵：听语气、识别情绪，并让 DSH 按对方当下的状态自然回复。 · Voice + emotion-aware companion for DeepSeek Harness.",
   "type": "module",
   "main": "src/index.js",
@@ -53,17 +53,22 @@
     "url": "https://github.com/LiDu-china/dsh-dafeiyu-emotion/issues"
   },
   "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "check": "node --check src/index.js && node --check lib/client.js",
-    "test": "node --check src/index.js && node --check lib/client.js && node --test scripts/test-shortcut-registration.mjs"
+    "test": "node --check src/index.js && node --check lib/client.js && node --test scripts/test-shortcut-registration.mjs scripts/test-delivery-policy.mjs scripts/test-analyze-handler.mjs"
   },
   "dependencies": {
     "dsh-dafeiyu": "0.1.23"
   },
   "dsh": {
+    "manifestVersion": 1,
     "client": {
       "platform": "web",
       "inject": []
