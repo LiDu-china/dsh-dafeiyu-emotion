@@ -90,6 +90,8 @@ dsh-dafeiyu-emotion
 
 `dsh-dafeiyu-emotion` 已发布到 npm。1024Store 会自动刷新一键安装入口；如果客户端尚未缓存到新版本，可以直接使用下面的 npm 命令。
 
+> `0.2.2` 目前通过 GitHub Release 提供；npm 上的最新版仍是 `0.2.1`，待 npm 发布完成后一键安装会自动升级。
+
 ### 通过 npm
 
 ```bash

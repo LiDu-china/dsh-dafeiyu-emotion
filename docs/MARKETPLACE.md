@@ -68,7 +68,7 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-Published as `dsh-dafeiyu-emotion@0.2.2` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source install remains available as a fallback.
+The `0.2.2` build is attached to the GitHub Release. npm publication is pending, so npm and the 1024Store one-click entry currently serve `0.2.1`; they will refresh after the maintainer publishes `0.2.2`. GitHub-source and Release-tarball installs remain available as fallbacks.
 
 ## Privacy
 
