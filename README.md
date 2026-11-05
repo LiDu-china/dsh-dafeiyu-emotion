@@ -90,8 +90,6 @@ dsh-dafeiyu-emotion
 
 `dsh-dafeiyu-emotion` 已发布到 npm。1024Store 会自动刷新一键安装入口；如果客户端尚未缓存到新版本，可以直接使用下面的 npm 命令。
 
-> `0.2.2` 目前通过 GitHub Release 提供；npm 上的最新版仍是 `0.2.1`，待 npm 发布完成后一键安装会自动升级。
-
 ### 通过 npm
 
 ```bash
@@ -109,9 +107,9 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.2.2.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.2/dsh-dafeiyu-emotion-0.2.2.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.2.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.2.3.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-dafeiyu-emotion-0.2.3.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.3.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。

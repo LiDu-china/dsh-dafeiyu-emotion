@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Documentation-only release: npm and the 1024Store entry now serve the corrected install notes for the 0.2.2 bug-fix release.
+- No runtime behavior changed from 0.2.2.
+
 ## 0.2.2
 
 - Fixed a duplicate-send race between auto-send and the manual send button.
