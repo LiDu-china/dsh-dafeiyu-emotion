@@ -11,6 +11,8 @@ export const inject = ['webServer']
 
 const ANALYZE_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/health'
+const CONFIG_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/config'
+const SETTINGS_NAMESPACE = 'dsh-dafeiyu-emotion'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const defaultWorker = resolve(here, '..', 'backend', 'voice_worker.py')
@@ -24,6 +26,9 @@ const DEFAULTS = Object.freeze({
   startupTimeoutMs: 180000,
   requestTimeoutMs: 180000,
 })
+
+const CONFIG_FIELDS = new Set(Object.keys(DEFAULTS))
+const LANGUAGES = new Set(['zh', 'en', 'auto'])
 
 const EMOTION_ZH = Object.freeze({
   happy: '喜悦',
@@ -110,6 +115,107 @@ function resolveOptions(raw = {}) {
     maxAudioBytes: Math.min(32 * 1024 * 1024, Math.max(256 * 1024, asNumber(raw.maxAudioBytes, DEFAULTS.maxAudioBytes))),
     startupTimeoutMs: Math.min(600000, Math.max(10000, asNumber(raw.startupTimeoutMs, DEFAULTS.startupTimeoutMs))),
     requestTimeoutMs: Math.min(600000, Math.max(10000, asNumber(raw.requestTimeoutMs, DEFAULTS.requestTimeoutMs))),
+  }
+}
+
+function publicConfig(options, writable = false) {
+  return {
+    enabled: options.enabled !== false,
+    backendRoot: options.backendRoot || '',
+    pythonPath: options.pythonPath || '',
+    language: options.language || DEFAULTS.language,
+    maxAudioBytes: options.maxAudioBytes,
+    startupTimeoutMs: options.startupTimeoutMs,
+    requestTimeoutMs: options.requestTimeoutMs,
+    writable,
+  }
+}
+
+function normalizeConfigPatch(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new HttpError(400, '配置必须是一个对象')
+  }
+  const patch = {}
+  for (const [key, next] of Object.entries(value)) {
+    if (!CONFIG_FIELDS.has(key)) throw new HttpError(400, `未知配置项：${key}`)
+    if (key === 'enabled') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'enabled 必须是布尔值')
+      patch.enabled = next
+      continue
+    }
+    if (key === 'language') {
+      const language = String(next || '').trim().toLowerCase()
+      if (!LANGUAGES.has(language)) throw new HttpError(400, 'language 只能是 zh、en 或 auto')
+      patch.language = language
+      continue
+    }
+    if (key === 'backendRoot' || key === 'pythonPath') {
+      if (typeof next !== 'string') throw new HttpError(400, `${key} 必须是字符串`)
+      const text = next.trim()
+      if (text.length > 500 || /[\u0000-\u001f]/.test(text)) {
+        throw new HttpError(400, `${key} 不是合法的本地路径`)
+      }
+      patch[key] = text
+      continue
+    }
+    const numeric = Number(next)
+    if (!Number.isFinite(numeric)) throw new HttpError(400, `${key} 必须是数字`)
+    if (key === 'maxAudioBytes') {
+      patch.maxAudioBytes = Math.round(Math.min(32 * 1024 * 1024, Math.max(256 * 1024, numeric)))
+    } else {
+      patch[key] = Math.round(Math.min(600000, Math.max(10000, numeric)))
+    }
+  }
+  return patch
+}
+
+function readSettings(service) {
+  if (typeof service?.describe !== 'function') return null
+  try {
+    const entry = service.describe().find((row) => row?.ns === SETTINGS_NAMESPACE)
+    if (!entry) return null
+    return { ...(entry.value || {}), ...(entry.user || {}) }
+  } catch {
+    return null
+  }
+}
+
+function createConfigHandler({ runtime, backend, getSettings }) {
+  return async (req, res) => {
+    if (!isLocalRequest(req)) {
+      jsonResponse(res, 403, { error: '只允许本机访问' })
+      return
+    }
+    const settings = getSettings()
+    const writable = typeof settings?.update === 'function'
+    if (req.method === 'GET') {
+      jsonResponse(res, 200, publicConfig(runtime.options, writable))
+      return
+    }
+    if (req.method !== 'PATCH') {
+      jsonResponse(res, 405, { error: 'method not allowed' })
+      return
+    }
+    if (!writable) {
+      jsonResponse(res, 503, {
+        error: '当前 DSH 版本不支持在设置页写入插件配置，请修改 profile 的 cordis.patch.yml 后重启',
+      })
+      return
+    }
+    try {
+      const patch = normalizeConfigPatch(await readJsonBody(req, 16 * 1024))
+      const before = { ...runtime.options }
+      await settings.update(SETTINGS_NAMESPACE, patch)
+      const next = resolveOptions({ ...runtime.options, ...patch })
+      Object.assign(runtime.options, next)
+      backend.syncOptions(before)
+      jsonResponse(res, 200, publicConfig(runtime.options, true))
+    } catch (error) {
+      const status = error instanceof HttpError ? error.status : 400
+      jsonResponse(res, status, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 }
 
@@ -385,6 +491,34 @@ class VoiceBackend {
     this.stopProcess(proc, { error: createAbortError(), preserveLastError: true })
   }
 
+  /**
+   * Adopt a new runtime configuration. A changed interpreter, backend root or
+   * timeout invalidates the live worker, so stop it once; the next request
+   * starts a fresh one with the new settings. Language changes are cheap and
+   * are read from the shared options object on the next request.
+   */
+  syncOptions(previous = {}) {
+    const next = this.options
+    this.python = locatePython(next)
+    const restart = previous.backendRoot !== next.backendRoot
+      || previous.pythonPath !== next.pythonPath
+      || previous.startupTimeoutMs !== next.startupTimeoutMs
+      || previous.requestTimeoutMs !== next.requestTimeoutMs
+    if (!next.enabled) {
+      void this.close()
+      return
+    }
+    if (restart) {
+      const proc = this.proc
+      if (proc) {
+        this.stopProcess(proc, {
+          error: new Error('配置已更新，语音后端将在下次请求时重新启动'),
+          preserveLastError: true,
+        })
+      }
+    }
+  }
+
   status() {
     return {
       state: this.proc && !this.proc.killed ? (this.ready ? 'ready' : 'starting') : 'sleeping',
@@ -649,14 +783,19 @@ function speechStatus(service) {
   }
 }
 
-function createAnalyzeHandler(options, backend, getSpeechToText) {
+function createAnalyzeHandler(runtime, backend, getSpeechToText) {
   return async (req, res) => {
+    const options = runtime.options
     if (!isLocalRequest(req)) {
       jsonResponse(res, 403, { error: '只允许本机访问' })
       return
     }
     if (req.method !== 'POST') {
       jsonResponse(res, 405, { error: 'method not allowed' })
+      return
+    }
+    if (!options.enabled) {
+      jsonResponse(res, 503, { error: '情绪耳朵已在设置中关闭' })
       return
     }
     let tempDir
@@ -728,14 +867,27 @@ function createAnalyzeHandler(options, backend, getSpeechToText) {
 }
 
 export function apply(ctx, rawConfig = {}) {
-  const options = resolveOptions(rawConfig)
-  if (!options.enabled) return
   const logger = ctx.logger ?? console
-  const backend = new VoiceBackend(options, logger)
-  if (options.backendRoot && !existsSync(options.backendRoot)) {
-    backend.noteError(`语音后端目录不存在：${options.backendRoot}`)
+  let settingsService = ctx.settings
+  const runtime = {
+    options: resolveOptions({
+      ...rawConfig,
+      ...(readSettings(settingsService) || {}),
+    }),
+  }
+  const backend = new VoiceBackend(runtime.options, logger)
+  if (runtime.options.backendRoot && !existsSync(runtime.options.backendRoot)) {
+    backend.noteError(`语音后端目录不存在：${runtime.options.backendRoot}`)
   }
   let speechToText
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsService = settingsCtx.settings
+    const stored = readSettings(settingsService)
+    if (!stored) return
+    const before = { ...runtime.options }
+    Object.assign(runtime.options, resolveOptions({ ...runtime.options, ...stored }))
+    backend.syncOptions(before)
+  })
   ctx.inject(['speechToText'], (speechCtx) => {
     speechToText = speechCtx.speechToText
     speechCtx.effect(() => () => {
@@ -754,6 +906,7 @@ export function apply(ctx, rawConfig = {}) {
             jsonResponse(res, 403, { error: '只允许本机访问' })
             return
           }
+          const options = runtime.options
           const speech = speechStatus(speechToText)
           const backendConfigured = Boolean(options.backendRoot)
           const backendAvailable = backendConfigured && existsSync(options.backendRoot)
@@ -785,12 +938,31 @@ export function apply(ctx, rawConfig = {}) {
       () => httpCtx.webServer.register({
         kind: 'exact',
         path: ANALYZE_ENDPOINT,
-        handler: createAnalyzeHandler(options, backend, () => speechToText),
+        handler: createAnalyzeHandler(runtime, backend, () => speechToText),
       }),
       'dsh-dafeiyu-emotion: 本地语音情绪分析',
+    )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: CONFIG_ENDPOINT,
+        handler: createConfigHandler({
+          runtime,
+          backend,
+          getSettings: () => settingsService,
+        }),
+      }),
+      'dsh-dafeiyu-emotion: 设置读写',
     )
   })
 
 }
 
-export { buildFallbackAnalysis, decorateAnalysis, transcribeWithSpeech }
+export {
+  buildFallbackAnalysis,
+  createConfigHandler,
+  decorateAnalysis,
+  normalizeConfigPatch,
+  publicConfig,
+  transcribeWithSpeech,
+}

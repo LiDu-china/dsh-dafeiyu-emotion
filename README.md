@@ -70,6 +70,8 @@
 
 - 🎙️ 输入框内录音，不需要跳到另一个应用；
 - ⌨️ DSH 原生语音快捷键，可在快捷键设置中自行改键；
+- 🎛️ DSH 设置页里的完整设置卡片：启用、语言、增强后端、超时和录音上限；
+- 🧭 安装 Better Sidebar 后，可把「情绪耳朵」固定到右侧边栏；
 - 🐋 大肥鱼主题的“鱼耳”入口，和普通对话共用同一个 composer；
 - 🧠 情绪标签：喜悦 / 低落 / 生气 / 紧张 / 惊讶 / 厌烦 / 平静；
 - 📈 额外给出 confidence、valence、arousal 和语气摘要；
@@ -109,12 +111,31 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.2.3.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-dafeiyu-emotion-0.2.3.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.3.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.2.4.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.4/dsh-dafeiyu-emotion-0.2.4.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.4.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。
+
+## 设置页与侧边栏
+
+插件会把自己的设置卡片注册到 DSH 的插件设置页。打开：
+
+```text
+设置 → 插件 → 大肥鱼情绪耳朵
+```
+
+可以直接调整：
+
+- 启用 / 停用情绪耳朵；
+- 识别语言：中文、English 或自动；
+- VoiceSense 增强后端目录与 Python 路径；
+- 单次录音上限、后端启动超时、单次分析超时。
+
+卡片顶部会实时显示当前模式：轻量模式、增强模式已就绪、模型加载中、后端目录不存在或等待 Voice Input。保存后配置会立即写入 DSH 设置，并在路径或超时变化时自动重启语音 worker。
+
+如果安装了 [Better Sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)，还可以在右侧边栏的 `+` 菜单里固定「情绪耳朵」，把同一份设置和状态放在对话旁边。
 
 ## 语音快捷键
 

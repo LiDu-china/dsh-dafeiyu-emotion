@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4
+
+- Added a full settings card for DSH's plugin settings, with live status for lightweight and enhanced modes.
+- Added a "情绪耳朵" tab for `dsh-better-sidebar` so the same panel can be pinned in the right sidebar.
+- Settings now cover enable/disable, recognition language, VoiceSense directory, Python path, recording limit, startup timeout and request timeout.
+- Added `GET/PATCH /plugins/dsh-dafeiyu-emotion/config` with local-only access, strict field validation and live backend restart when paths or timeouts change.
+- Refreshed the fish-ear trigger and settings panel with a calmer whale-blue visual system, visible focus states and reduced-motion support.
+- Added config-handler regression tests (validation, read-only hosts, status codes and runtime updates).
+
 ## 0.2.3
 
 - Documentation-only release: npm and the 1024Store entry now serve the corrected install notes for the 0.2.2 bug-fix release.
