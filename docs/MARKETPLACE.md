@@ -24,6 +24,10 @@ https://raw.githubusercontent.com/LiDu-china/dsh-dafeiyu-emotion/main/assets/ico
 
 让 DSH 里的大肥鱼听得见、听得懂，并按对方的语气和情绪自然回复。
 
+## Demo video
+
+https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-dafeiyu-emotion-demo.mp4
+
 ## Short description
 
 在 DSH 输入框旁边加一个 🐋 鱼耳：本地转写语音，分析语速/停顿/音高/能量和文字线索，生成克制的情绪上下文，再自动发送给大肥鱼回复。默认不把音频上传到云端。

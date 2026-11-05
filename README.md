@@ -24,6 +24,8 @@
 >
 > 角色主视觉采用蓝发鲸鱼少女的大肥鱼设定。
 
+🎬 [观看 43 秒功能演示](https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-dafeiyu-emotion-demo.mp4)
+
 ---
 
 <a id="中文"></a>
