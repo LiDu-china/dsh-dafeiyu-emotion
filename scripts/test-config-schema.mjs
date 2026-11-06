@@ -74,6 +74,21 @@ assert.throws(
   assert.ok(options.backendRoot.endsWith('voice-sense'))
   assert.equal(options.language, 'auto')
   assert.equal(options.maxAudioBytes, 8 * 1024 * 1024)
+
+  const shared = { x: 1 }
+  assert.deepEqual(
+    plainConfig({ a: shared, b: shared }),
+    { a: { x: 1 }, b: { x: 1 } },
+    'a shared object must survive in both branches',
+  )
+  assert.deepEqual(
+    plainConfig({ a: [shared, shared] }),
+    { a: [{ x: 1 }, { x: 1 }] },
+    'a shared array element must survive twice',
+  )
+  const cycle = {}
+  cycle.self = cycle
+  assert.deepEqual(plainConfig(cycle), { self: undefined }, 'a real cycle must be cut')
 }
 
 console.log('config schema tests passed')

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+
+- Removed `settings` from the hard inject list. A hard `settings` dependency can deadlock host startup while the settings service is still building plugin `Config` projections.
+- Settings are now resolved with `ctx.inject(['settings'], ...)` after the host is up; `/config` is read-only until then and becomes writable when the service arrives.
+- Added a regression assertion that `settings` is not a hard dependency.
+
 ## 0.2.9
 
 - Fixed the host startup timeout: `apply` synchronously called `settings.describe()` while the host was still mounting plugins, which could deadlock startup for 60 seconds.

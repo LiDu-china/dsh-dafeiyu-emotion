@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 import { apply, inject } from '../src/index.js'
 
 assert.ok(inject.includes('webServer'), 'webServer must be a declared dependency')
-assert.ok(inject.includes('settings'), 'settings must be a declared dependency')
+assert.equal(inject.includes('settings'), false, 'settings must be resolved dynamically, not as a hard dependency')
 
 const ANALYZE = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH = '/plugins/dsh-dafeiyu-emotion/health'

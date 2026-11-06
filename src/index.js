@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'dsh-dafeiyu-emotion'
-export const inject = ['webServer', 'settings']
+export const inject = ['webServer']
 
 const ANALYZE_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/health'
@@ -142,16 +142,18 @@ function asNumber(value, fallback) {
  * Unwrap them before path/string/number handling, otherwise String(ref)
  * becomes "[object Object]" and a path is resolved into the profile cwd.
  */
-function plainConfig(value, seen = new WeakSet(), depth = 0) {
+function plainConfig(value, stack = new WeakSet(), depth = 0) {
   if (depth > 20) return undefined
   if (value && typeof value === 'object') {
-    if (seen.has(value)) return undefined
-    seen.add(value)
-  }
-  if (value && typeof value.get === 'function') return plainConfig(value.get(), seen, depth + 1)
-  if (Array.isArray(value)) return value.map((child) => plainConfig(child, seen, depth + 1))
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfig(child, seen, depth + 1)]))
+    if (stack.has(value)) return undefined
+    stack.add(value)
+    try {
+      if (typeof value.get === 'function') return plainConfig(value.get(), stack, depth + 1)
+      if (Array.isArray(value)) return value.map((child) => plainConfig(child, stack, depth + 1))
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfig(child, stack, depth + 1)]))
+    } finally {
+      stack.delete(value)
+    }
   }
   return value
 }
@@ -956,7 +958,10 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
 
 export function apply(ctx, rawConfig = {}) {
   const logger = ctx.logger ?? console
-  let settingsService = ctx.settings
+  // Resolve settings through ctx.inject below instead of a hard dependency.
+  // A hard `settings` inject can deadlock host startup while the settings
+  // service is still building the plugin Config projections.
+  let settingsService
   const runtime = {
     // Do not call settings.describe() here: this runs inside the host's
     // startup transaction and describing every plugin can deadlock the host.
