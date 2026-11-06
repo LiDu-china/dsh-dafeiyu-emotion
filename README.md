@@ -76,6 +76,7 @@
 - 📈 多段语音的情绪时间线，可悬停查看每段文本、情绪和置信度；
 - 🔐 设置页内的隐私与运行状态：最近音频大小、模型加载、worker PID、临时文件清理；
 - 🔌 本机 `/context` 接口，其他插件可以读取最近一次情绪上下文；
+- 🔊 大肥鱼回复语音：Piper 本地模型默认朗读，Edge / 浏览器语音可选；
 - 🐋 大肥鱼主题的“鱼耳”入口，和普通对话共用同一个 composer；
 - 🧠 情绪标签：喜悦 / 低落 / 生气 / 紧张 / 惊讶 / 厌烦 / 平静；
 - 📈 额外给出 confidence、valence、arousal 和语气摘要；
@@ -115,12 +116,33 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.3.0.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.0/dsh-dafeiyu-emotion-0.3.0.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.0.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.3.1.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.1/dsh-dafeiyu-emotion-0.3.1.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.1.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。
+
+## 大肥鱼语音回复
+
+助手回复生成后，插件会通过本机事件流把文本交给 TTS，让大肥鱼把回复读出来。
+
+默认使用 **Piper 本地模型**，音色是 `zh_CN-huayan-medium`。它不联网，延迟低，适合日常对话：
+
+```bash
+python -m pip install piper-tts
+```
+
+把模型放到默认目录：
+
+```text
+~/.dsh/dafeiyu-emotion/tts/piper/zh_CN-huayan-medium.onnx
+~/.dsh/dafeiyu-emotion/tts/piper/zh_CN-huayan-medium.onnx.json
+```
+
+也可以在设置页填写自定义 Piper 模型路径。模型缺失或合成失败时，会自动回退到浏览器 `speechSynthesis`，不会让回复静默丢失。
+
+如果更喜欢更自然的在线音色，可以把引擎切到 **Edge TTS**，默认音色 `zh-CN-XiaoyiNeural`。Edge 需要网络，且回复文本会发送到 Microsoft；如果网络或服务不可用，同样会回退到浏览器语音。
 
 ## 设置页与侧边栏
 
@@ -190,6 +212,12 @@ dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.0.tgz"
 | `pythonPath` | 空 | 自定义 Python；空则自动寻找 `.venv-ser` |
 | `language` | `zh` | 识别语言：`zh` / `en` / `auto` |
 | `empathyStyle` | `gentle` | 共情策略：`gentle` / `direct` / `humorous` / `concise` |
+| `ttsEnabled` | `true` | 是否朗读大肥鱼回复 |
+| `ttsEngine` | `piper` | `piper` 本地 / `edge` 在线 / `browser` 系统语音 |
+| `ttsVoice` | `zh-CN-XiaoyiNeural` | Edge TTS 音色 |
+| `ttsRate` | `+6%` | Piper/Edge 语速 |
+| `ttsPitch` | `+12Hz` | Edge 音调 |
+| `ttsPiperModel` | 空 | 自定义 Piper 模型路径；空则用默认目录 |
 | `maxAudioBytes` | 12 MB | 单次录音大小上限 |
 | `startupTimeoutMs` | 180000 | 首次加载增强后端的最长等待 |
 | `requestTimeoutMs` | 180000 | 单次分析请求超时 |

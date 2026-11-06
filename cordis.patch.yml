@@ -29,6 +29,14 @@
         pythonPath: ""
         language: zh
         empathyStyle: gentle
+        ttsEnabled: true
+        ttsEngine: piper
+        ttsVoice: zh-CN-XiaoyiNeural
+        ttsRate: "+6%"
+        ttsPitch: "+12Hz"
+        ttsCommand: ""
+        ttsPiperModel: ""
+        ttsPiperCommand: ""
         maxAudioBytes: 12582912
         startupTimeoutMs: 180000
         requestTimeoutMs: 180000

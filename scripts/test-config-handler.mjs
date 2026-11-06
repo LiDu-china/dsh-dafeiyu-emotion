@@ -82,6 +82,11 @@ async function call(handler, req) {
     enabled: false,
     language: 'EN',
     empathyStyle: 'DIRECT',
+    ttsEnabled: true,
+    ttsEngine: 'BROWSER',
+    ttsVoice: 'zh-CN-XiaoxiaoNeural',
+    ttsRate: '+10%',
+    ttsPitch: '+20Hz',
     maxAudioBytes: 1,
     startupTimeoutMs: 1,
     requestTimeoutMs: 999999,
@@ -91,6 +96,11 @@ async function call(handler, req) {
   assert.equal(patch.enabled, false)
   assert.equal(patch.language, 'en')
   assert.equal(patch.empathyStyle, 'direct')
+  assert.equal(patch.ttsEnabled, true)
+  assert.equal(patch.ttsEngine, 'browser')
+  assert.equal(patch.ttsVoice, 'zh-CN-XiaoxiaoNeural')
+  assert.equal(patch.ttsRate, '+10%')
+  assert.equal(patch.ttsPitch, '+20Hz')
   assert.equal(patch.maxAudioBytes, 256 * 1024)
   assert.equal(patch.startupTimeoutMs, 10000)
   assert.equal(patch.requestTimeoutMs, 600000)
@@ -104,6 +114,9 @@ async function call(handler, req) {
   assert.throws(() => normalizeConfigPatch({ enabled: 'yes' }), /布尔值/)
   assert.throws(() => normalizeConfigPatch({ language: 'fr' }), /language/)
   assert.throws(() => normalizeConfigPatch({ empathyStyle: 'sarcastic' }), /empathyStyle/)
+  assert.throws(() => normalizeConfigPatch({ ttsEngine: 'cloud' }), /ttsEngine/)
+  assert.throws(() => normalizeConfigPatch({ ttsVoice: 'bad' }), /ttsVoice/)
+  assert.throws(() => normalizeConfigPatch({ ttsRate: '6%' }), /ttsRate/)
   assert.throws(() => normalizeConfigPatch({ backendRoot: 'C:\\bad\u0000path' }), /本地路径/)
   assert.throws(() => normalizeConfigPatch(null), /对象/)
   assert.throws(() => normalizeConfigPatch({ maxAudioBytes: true }), /整数/)

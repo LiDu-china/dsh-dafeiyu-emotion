@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- Added spoken assistant replies. The host now forwards `assistant/message` text over `/plugins/dsh-dafeiyu-emotion/events`; the client plays it with TTS.
+- Added local Piper TTS (`zh_CN-huayan-medium`) as the default engine, with Edge TTS as an optional online engine and browser `speechSynthesis` as the final fallback.
+- Added `ttsEnabled`, `ttsEngine`, `ttsVoice`, `ttsRate`, `ttsPitch` and `ttsPiperModel` settings, including a voice selector and model path field.
+- Added `POST /plugins/dsh-dafeiyu-emotion/tts`, returning WAV for Piper and MP3 for Edge.
+- Edge TTS failures and missing Piper models fall back to local browser speech instead of breaking the reply.
+- Added TTS handler, assistant-text extraction, SSE broadcast and markdown-cleaning tests.
+
 ## 0.3.0
 
 - Added `empathyStyle` with four reply strategies: gentle, direct, humorous and concise. The choice is persisted and injected into the emotion-aware prompt.

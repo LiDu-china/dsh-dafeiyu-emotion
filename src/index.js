@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -14,6 +14,8 @@ const ANALYZE_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/health'
 const CONFIG_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/config'
 const CONTEXT_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/context'
+const TTS_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/tts'
+const EVENTS_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/events'
 const SETTINGS_NAMESPACE = 'dsh-dafeiyu-emotion'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -28,6 +30,14 @@ const DEFAULTS = Object.freeze({
   startupTimeoutMs: 180000,
   requestTimeoutMs: 180000,
   empathyStyle: 'gentle',
+  ttsEnabled: true,
+  ttsEngine: 'piper',
+  ttsVoice: 'zh-CN-XiaoyiNeural',
+  ttsRate: '+6%',
+  ttsPitch: '+12Hz',
+  ttsCommand: '',
+  ttsPiperModel: '',
+  ttsPiperCommand: '',
 })
 
 const CONFIG_FIELDS = new Set(Object.keys(DEFAULTS))
@@ -69,6 +79,18 @@ export const Config = Schema.object({
     Schema.const('humorous').description('幽默'),
     Schema.const('concise').description('简洁'),
   ]).default('gentle').description('共情策略').volatile(),
+  ttsEnabled: Schema.boolean().default(true).description('朗读大肥鱼回复').volatile(),
+  ttsEngine: Schema.union([
+    Schema.const('piper').description('Piper 本地模型（推荐）'),
+    Schema.const('edge').description('Edge TTS（更好听，需要网络）'),
+    Schema.const('browser').description('浏览器本地语音'),
+  ]).default('piper').description('语音合成引擎').volatile(),
+  ttsVoice: Schema.string().default('zh-CN-XiaoyiNeural').description('Edge TTS 音色').volatile(),
+  ttsRate: Schema.string().default('+6%').description('语速').volatile(),
+  ttsPitch: Schema.string().default('+12Hz').description('音调').volatile(),
+  ttsCommand: Schema.string().default('').description('edge-tts 可执行文件路径').volatile(),
+  ttsPiperModel: Schema.string().default('').description('Piper 模型路径').volatile(),
+  ttsPiperCommand: Schema.string().default('').description('Piper 可执行文件路径').volatile(),
 }).description('大肥鱼语音情绪耳朵')
 
 const EMOTION_ZH = Object.freeze({
@@ -123,6 +145,266 @@ function jsonResponse(res, status, body) {
     'content-length': Buffer.byteLength(payload),
   })
   res.end(payload)
+}
+
+function resolveEdgeTts(options) {
+  const explicit = String(options?.ttsCommand || '').trim()
+  if (explicit) return explicit
+  const fromEnv = String(process.env.EDGE_TTS_PATH || '').trim()
+  if (fromEnv) return fromEnv
+  const local = process.env.LOCALAPPDATA
+  const roaming = process.env.APPDATA
+  const candidates = [
+    local && join(local, 'Programs', 'Python', 'Python313', 'Scripts', 'edge-tts.exe'),
+    local && join(local, 'Programs', 'Python', 'Python312', 'Scripts', 'edge-tts.exe'),
+    roaming && join(roaming, 'Python', 'Python313', 'Scripts', 'edge-tts.exe'),
+    'edge-tts',
+  ].filter(Boolean)
+  return candidates.find((candidate) => candidate === 'edge-tts' || existsSync(candidate)) || 'edge-tts'
+}
+
+function defaultPiperModel() {
+  const home = process.env.USERPROFILE || process.env.HOME || ''
+  return join(home, '.dsh', 'dafeiyu-emotion', 'tts', 'piper', 'zh_CN-huayan-medium.onnx')
+}
+
+function resolvePiperModel(options) {
+  return String(options?.ttsPiperModel || process.env.DSH_DAFEIYU_PIPER_MODEL || defaultPiperModel()).trim()
+}
+
+function resolvePiperCommand(options) {
+  const explicit = String(options?.ttsPiperCommand || process.env.PIPER_PATH || '').trim()
+  if (explicit) return explicit
+  const local = process.env.LOCALAPPDATA
+  const candidates = [
+    local && join(local, 'Programs', 'Python', 'Python313', 'Scripts', 'piper.exe'),
+    local && join(local, 'Programs', 'Python', 'Python312', 'Scripts', 'piper.exe'),
+    'piper',
+  ].filter(Boolean)
+  return candidates.find((candidate) => candidate === 'piper' || existsSync(candidate)) || 'piper'
+}
+
+async function synthesizePiper(text, options) {
+  const model = resolvePiperModel(options)
+  const command = resolvePiperCommand(options)
+  if (!existsSync(model)) throw new Error(`Piper 模型不存在：${model}`)
+  const config = `${model}.json`
+  if (!existsSync(config)) throw new Error(`Piper 模型配置不存在：${config}`)
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-dafeiyu-tts-'))
+  const input = join(dir, 'input.txt')
+  const out = join(dir, 'reply.wav')
+  try {
+    await writeFile(input, text, 'utf8')
+    const speed = Number.parseFloat(String(options.ttsRate || '+0%').replace('%', ''))
+    const lengthScale = Number.isFinite(speed) && speed !== 0 ? 1 / (1 + speed / 100) : 1
+    await new Promise((resolvePromise, rejectPromise) => {
+      const proc = spawn(command, [
+        '-m', model,
+        '-c', config,
+        '-i', input,
+        '-f', out,
+        '--length-scale', String(Math.max(0.7, Math.min(1.4, lengthScale))),
+      ], {
+        windowsHide: true,
+        env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+      })
+      let stderr = ''
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        try { proc.kill() } catch {}
+        rejectPromise(new Error('Piper 合成超时'))
+      }, 30000)
+      proc.stderr?.on('data', (chunk) => { stderr += chunk.toString('utf8') })
+      proc.on('error', (error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        rejectPromise(error)
+      })
+      proc.on('exit', (code) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (code === 0) resolvePromise()
+        else rejectPromise(new Error(stderr.trim() || `piper 退出（code=${code}）`))
+      })
+    })
+    return await readFile(out)
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+function ttsReady(options) {
+  if (!options.ttsEnabled) return false
+  if (options.ttsEngine === 'browser') return true
+  if (options.ttsEngine === 'piper') return existsSync(resolvePiperModel(options))
+  return existsSync(resolveEdgeTts(options))
+}
+
+function assistantTextFromEvent(event) {
+  const content = event?.data?.message?.content
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+function cleanForSpeech(text) {
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_~>#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 800)
+}
+
+async function synthesizeEdge(text, options) {
+  const command = resolveEdgeTts(options)
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-dafeiyu-tts-'))
+  const out = join(dir, 'reply.mp3')
+  try {
+    await new Promise((resolvePromise, rejectPromise) => {
+      const proc = spawn(command, [
+        '--voice', options.ttsVoice,
+        '--rate', options.ttsRate,
+        '--pitch', options.ttsPitch,
+        '--text', text,
+        '--write-media', out,
+      ], { windowsHide: true })
+      let stderr = ''
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        try { proc.kill() } catch {}
+        rejectPromise(new Error('TTS 合成超时'))
+      }, 25000)
+      proc.stderr?.on('data', (chunk) => { stderr += chunk.toString('utf8') })
+      proc.on('error', (error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        rejectPromise(error)
+      })
+      proc.on('exit', (code) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (code === 0) resolvePromise()
+        else rejectPromise(new Error(stderr.trim() || `edge-tts 退出（code=${code}）`))
+      })
+    })
+    return await readFile(out)
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+function createTtsHandler(runtime) {
+  return async (req, res) => {
+    if (!isLocalRequest(req)) {
+      jsonResponse(res, 403, { error: '只允许本机访问' })
+      return
+    }
+    if (req.method !== 'POST') {
+      jsonResponse(res, 405, { error: 'method not allowed' })
+      return
+    }
+    if (!runtime.options.ttsEnabled) {
+      jsonResponse(res, 503, { error: '语音回复已关闭' })
+      return
+    }
+    try {
+      const body = await readJsonBody(req, 16 * 1024)
+      const text = cleanForSpeech(body?.text)
+      if (!text) throw new HttpError(400, '没有可朗读的文本')
+      if (runtime.options.ttsEngine === 'browser') {
+        throw new HttpError(400, '浏览器语音引擎在客户端本地运行，不需要调用 Host TTS')
+      }
+      const voice = String(body?.voice || runtime.options.ttsVoice)
+      const rate = String(body?.rate || runtime.options.ttsRate)
+      const pitch = String(body?.pitch || runtime.options.ttsPitch)
+      if (!/^[+-]\d{1,3}%$/.test(rate)) throw new HttpError(400, '语速格式不合法')
+      let audio
+      let contentType
+      if (runtime.options.ttsEngine === 'piper') {
+        audio = await synthesizePiper(text, { ...runtime.options, ttsRate: rate })
+        contentType = 'audio/wav'
+      } else {
+        if (!/^[A-Za-z]{2,3}-[A-Za-z0-9-]+Neural$/.test(voice)) throw new HttpError(400, '音色不合法')
+        if (!/^[+-]\d{1,3}Hz$/.test(pitch)) throw new HttpError(400, '音调格式不合法')
+        audio = await synthesizeEdge(text, {
+          ...runtime.options,
+          ttsVoice: voice,
+          ttsRate: rate,
+          ttsPitch: pitch,
+        })
+        contentType = 'audio/mpeg'
+      }
+      res.writeHead(200, {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+        'content-length': audio.length,
+      })
+      res.end(audio)
+    } catch (error) {
+      const status = error instanceof HttpError ? error.status : 502
+      jsonResponse(res, status, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
+
+function createSpeechStream() {
+  const clients = new Set()
+  return {
+    add(res) {
+      clients.add(res)
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      })
+      res.write(': connected\n\n')
+      const timer = setInterval(() => {
+        try {
+          res.write(': ping\n\n')
+        } catch {
+          clearInterval(timer)
+          clients.delete(res)
+        }
+      }, 15000)
+      res.on('close', () => {
+        clearInterval(timer)
+        clients.delete(res)
+      })
+    },
+    broadcast(message) {
+      const payload = `data: ${JSON.stringify(message)}\n\n`
+      for (const res of clients) {
+        try {
+          res.write(payload)
+        } catch {
+          clients.delete(res)
+        }
+      }
+    },
+    close() {
+      for (const res of clients) {
+        try { res.end() } catch {}
+      }
+      clients.clear()
+    },
+  }
 }
 
 async function readJsonBody(req, limit) {
@@ -181,6 +463,14 @@ function resolveOptions(raw = {}) {
     empathyStyle: ['gentle', 'direct', 'humorous', 'concise'].includes(value.empathyStyle)
       ? value.empathyStyle
       : DEFAULTS.empathyStyle,
+    ttsEnabled: value.ttsEnabled === true,
+    ttsEngine: ['piper', 'edge', 'browser'].includes(value.ttsEngine) ? value.ttsEngine : DEFAULTS.ttsEngine,
+    ttsVoice: String(value.ttsVoice || DEFAULTS.ttsVoice).trim(),
+    ttsRate: String(value.ttsRate || DEFAULTS.ttsRate).trim(),
+    ttsPitch: String(value.ttsPitch || DEFAULTS.ttsPitch).trim(),
+    ttsCommand: String(value.ttsCommand || '').trim(),
+    ttsPiperModel: String(value.ttsPiperModel || '').trim(),
+    ttsPiperCommand: String(value.ttsPiperCommand || '').trim(),
     maxAudioBytes: Math.min(32 * 1024 * 1024, Math.max(256 * 1024, asNumber(value.maxAudioBytes, DEFAULTS.maxAudioBytes))),
     startupTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.startupTimeoutMs, DEFAULTS.startupTimeoutMs))),
     requestTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.requestTimeoutMs, DEFAULTS.requestTimeoutMs))),
@@ -194,6 +484,14 @@ function publicConfig(options, writable = false) {
     pythonPath: options.pythonPath || '',
     language: options.language || DEFAULTS.language,
     empathyStyle: options.empathyStyle || DEFAULTS.empathyStyle,
+    ttsEnabled: options.ttsEnabled === true,
+    ttsEngine: options.ttsEngine || DEFAULTS.ttsEngine,
+    ttsVoice: options.ttsVoice || DEFAULTS.ttsVoice,
+    ttsRate: options.ttsRate || DEFAULTS.ttsRate,
+    ttsPitch: options.ttsPitch || DEFAULTS.ttsPitch,
+    ttsCommand: options.ttsCommand || '',
+    ttsPiperModel: options.ttsPiperModel || '',
+    ttsPiperCommand: options.ttsPiperCommand || '',
     maxAudioBytes: options.maxAudioBytes,
     startupTimeoutMs: options.startupTimeoutMs,
     requestTimeoutMs: options.requestTimeoutMs,
@@ -225,6 +523,54 @@ function normalizeConfigPatch(value) {
         throw new HttpError(400, 'empathyStyle 只能是 gentle、direct、humorous 或 concise')
       }
       patch.empathyStyle = style
+      continue
+    }
+    if (key === 'ttsEnabled') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'ttsEnabled 必须是布尔值')
+      patch.ttsEnabled = next
+      continue
+    }
+    if (key === 'ttsEngine') {
+      const engine = String(next || '').trim().toLowerCase()
+      if (!['piper', 'edge', 'browser'].includes(engine)) {
+        throw new HttpError(400, 'ttsEngine 只能是 piper、edge 或 browser')
+      }
+      patch.ttsEngine = engine
+      continue
+    }
+    if (key === 'ttsVoice') {
+      const voice = String(next || '').trim()
+      if (!/^[A-Za-z]{2,3}-[A-Za-z0-9-]+Neural$/.test(voice)) {
+        throw new HttpError(400, 'ttsVoice 不是合法的 Edge TTS 音色')
+      }
+      patch.ttsVoice = voice
+      continue
+    }
+    if (key === 'ttsRate' || key === 'ttsPitch') {
+      const value = String(next || '').trim()
+      const pattern = key === 'ttsRate' ? /^[+-]\d{1,3}%$/ : /^[+-]\d{1,3}Hz$/
+      if (!pattern.test(value)) {
+        throw new HttpError(400, `${key} 格式应为 ${key === 'ttsRate' ? '+6%' : '+12Hz'}`)
+      }
+      patch[key] = value
+      continue
+    }
+    if (key === 'ttsCommand') {
+      if (typeof next !== 'string') throw new HttpError(400, 'ttsCommand 必须是字符串')
+      const text = next.trim()
+      if (text.length > 500 || /[\u0000-\u001f]/.test(text)) {
+        throw new HttpError(400, 'ttsCommand 不是合法的路径')
+      }
+      patch.ttsCommand = text
+      continue
+    }
+    if (key === 'ttsPiperModel' || key === 'ttsPiperCommand') {
+      if (typeof next !== 'string') throw new HttpError(400, `${key} 必须是字符串`)
+      const text = next.trim()
+      if (text.length > 500 || /[\u0000-\u001f]/.test(text)) {
+        throw new HttpError(400, `${key} 不是合法的路径`)
+      }
+      patch[key] = text
       continue
     }
     if (key === 'backendRoot' || key === 'pythonPath') {
@@ -1049,6 +1395,7 @@ export function apply(ctx, rawConfig = {}) {
     lastCleanupAt: null,
   }
   const backend = new VoiceBackend(runtime.options, logger)
+  const speechStream = createSpeechStream()
   let speechToText
   ctx.inject(['settings'], (settingsCtx) => {
     settingsService = settingsCtx.settings
@@ -1060,6 +1407,25 @@ export function apply(ctx, rawConfig = {}) {
     })
   })
   ctx.effect(() => () => backend.close())
+  ctx.effect(() => () => speechStream.close())
+
+  ctx.inject(['sessions'], (sessionCtx) => {
+    try {
+      const off = sessionCtx.on?.('session/event', (session, event) => {
+        if (event?.type !== 'assistant/message' || !runtime.options.ttsEnabled) return
+        const text = cleanForSpeech(assistantTextFromEvent(event))
+        if (!text) return
+        speechStream.broadcast({
+          kind: 'assistant',
+          sessionId: String(session?.header?.id ?? session?.id ?? ''),
+          text,
+        })
+      })
+      if (typeof off === 'function') ctx.effect(() => off)
+    } catch (error) {
+      logger.warn?.('[dsh-dafeiyu-emotion] failed to subscribe to session events:', error)
+    }
+  })
 
   ctx.inject(['webServer'], (httpCtx) => {
     httpCtx.effect(
@@ -1086,6 +1452,10 @@ export function apply(ctx, rawConfig = {}) {
             enabled: options.enabled,
             language: options.language,
             empathyStyle: options.empathyStyle,
+            ttsEnabled: options.ttsEnabled,
+            ttsEngine: options.ttsEngine,
+            ttsVoice: options.ttsVoice,
+            ttsReady: ttsReady(options),
             engine: backendAvailable ? 'SenseVoice + emotion2vec' : 'DSH Speech + prosody',
             mode: !backendConfigured
               ? 'dsh-speech-prosody'
@@ -1154,19 +1524,52 @@ export function apply(ctx, rawConfig = {}) {
       }),
       'dsh-dafeiyu-emotion: 最近情绪上下文',
     )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: TTS_ENDPOINT,
+        handler: createTtsHandler(runtime),
+      }),
+      'dsh-dafeiyu-emotion: 语音合成',
+    )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: EVENTS_ENDPOINT,
+        handler(req, res) {
+          if (!isLocalRequest(req)) {
+            jsonResponse(res, 403, { error: '只允许本机访问' })
+            return
+          }
+          if (req.method !== 'GET') {
+            jsonResponse(res, 405, { error: 'method not allowed' })
+            return
+          }
+          speechStream.add(res)
+        },
+      }),
+      'dsh-dafeiyu-emotion: 回复语音事件',
+    )
   })
 
 }
 
 export {
   VoiceBackend,
+  assistantTextFromEvent,
   buildFallbackAnalysis,
   buildPrompt,
+  cleanForSpeech,
   createConfigHandler,
   decorateAnalysis,
   normalizeConfigPatch,
   plainConfig,
   publicConfig,
+  resolveEdgeTts,
+  resolvePiperCommand,
+  resolvePiperModel,
   resolveOptions,
+  synthesizePiper,
+  ttsReady,
   transcribeWithSpeech,
 }
