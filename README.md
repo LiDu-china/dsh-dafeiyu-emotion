@@ -116,9 +116,9 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.3.1.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.1/dsh-dafeiyu-emotion-0.3.1.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.1.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.3.2.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.2/dsh-dafeiyu-emotion-0.3.2.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.2.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。
@@ -213,6 +213,7 @@ python -m pip install piper-tts
 | `language` | `zh` | 识别语言：`zh` / `en` / `auto` |
 | `empathyStyle` | `gentle` | 共情策略：`gentle` / `direct` / `humorous` / `concise` |
 | `ttsEnabled` | `true` | 是否朗读大肥鱼回复 |
+| `ttsOnlyAfterVoice` | `true` | 只朗读录音后两分钟内的回复 |
 | `ttsEngine` | `piper` | `piper` 本地 / `edge` 在线 / `browser` 系统语音 |
 | `ttsVoice` | `zh-CN-XiaoyiNeural` | Edge TTS 音色 |
 | `ttsRate` | `+6%` | Piper/Edge 语速 |

@@ -31,6 +31,7 @@ const DEFAULTS = Object.freeze({
   requestTimeoutMs: 180000,
   empathyStyle: 'gentle',
   ttsEnabled: true,
+  ttsOnlyAfterVoice: true,
   ttsEngine: 'piper',
   ttsVoice: 'zh-CN-XiaoyiNeural',
   ttsRate: '+6%',
@@ -80,6 +81,7 @@ export const Config = Schema.object({
     Schema.const('concise').description('简洁'),
   ]).default('gentle').description('共情策略').volatile(),
   ttsEnabled: Schema.boolean().default(true).description('朗读大肥鱼回复').volatile(),
+  ttsOnlyAfterVoice: Schema.boolean().default(true).description('只朗读语音触发的回复').volatile(),
   ttsEngine: Schema.union([
     Schema.const('piper').description('Piper 本地模型（推荐）'),
     Schema.const('edge').description('Edge TTS（更好听，需要网络）'),
@@ -464,6 +466,7 @@ function resolveOptions(raw = {}) {
       ? value.empathyStyle
       : DEFAULTS.empathyStyle,
     ttsEnabled: value.ttsEnabled === true,
+    ttsOnlyAfterVoice: value.ttsOnlyAfterVoice !== false,
     ttsEngine: ['piper', 'edge', 'browser'].includes(value.ttsEngine) ? value.ttsEngine : DEFAULTS.ttsEngine,
     ttsVoice: String(value.ttsVoice || DEFAULTS.ttsVoice).trim(),
     ttsRate: String(value.ttsRate || DEFAULTS.ttsRate).trim(),
@@ -485,6 +488,7 @@ function publicConfig(options, writable = false) {
     language: options.language || DEFAULTS.language,
     empathyStyle: options.empathyStyle || DEFAULTS.empathyStyle,
     ttsEnabled: options.ttsEnabled === true,
+    ttsOnlyAfterVoice: options.ttsOnlyAfterVoice !== false,
     ttsEngine: options.ttsEngine || DEFAULTS.ttsEngine,
     ttsVoice: options.ttsVoice || DEFAULTS.ttsVoice,
     ttsRate: options.ttsRate || DEFAULTS.ttsRate,
@@ -528,6 +532,11 @@ function normalizeConfigPatch(value) {
     if (key === 'ttsEnabled') {
       if (typeof next !== 'boolean') throw new HttpError(400, 'ttsEnabled 必须是布尔值')
       patch.ttsEnabled = next
+      continue
+    }
+    if (key === 'ttsOnlyAfterVoice') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'ttsOnlyAfterVoice 必须是布尔值')
+      patch.ttsOnlyAfterVoice = next
       continue
     }
     if (key === 'ttsEngine') {
@@ -1358,6 +1367,7 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
       }
       runtime.lastAudioBytes = buffer.length
       runtime.lastAnalysisAt = runtime.lastAnalysis.at
+      runtime.lastVoiceAt = Date.now()
       jsonResponse(res, 200, analysis)
     } catch (error) {
       if (controller?.signal.aborted || res.writableEnded) return
@@ -1390,6 +1400,7 @@ export function apply(ctx, rawConfig = {}) {
     // shared runtime object and settings.update persists it for the next boot.
     options: resolveOptions(rawConfig),
     lastAnalysis: null,
+    lastVoiceAt: null,
     lastAudioBytes: 0,
     lastAnalysisAt: null,
     lastCleanupAt: null,
@@ -1413,6 +1424,8 @@ export function apply(ctx, rawConfig = {}) {
     try {
       const off = sessionCtx.on?.('session/event', (session, event) => {
         if (event?.type !== 'assistant/message' || !runtime.options.ttsEnabled) return
+        if (runtime.options.ttsOnlyAfterVoice
+          && (!runtime.lastVoiceAt || Date.now() - runtime.lastVoiceAt > 120000)) return
         const text = cleanForSpeech(assistantTextFromEvent(event))
         if (!text) return
         speechStream.broadcast({
@@ -1453,6 +1466,7 @@ export function apply(ctx, rawConfig = {}) {
             language: options.language,
             empathyStyle: options.empathyStyle,
             ttsEnabled: options.ttsEnabled,
+            ttsOnlyAfterVoice: options.ttsOnlyAfterVoice,
             ttsEngine: options.ttsEngine,
             ttsVoice: options.ttsVoice,
             ttsReady: ttsReady(options),
@@ -1471,6 +1485,7 @@ export function apply(ctx, rawConfig = {}) {
             privacy: {
               lastAudioBytes: runtime.lastAudioBytes,
               lastAnalysisAt: runtime.lastAnalysisAt,
+              lastVoiceAt: runtime.lastVoiceAt,
               lastCleanupAt: runtime.lastCleanupAt,
               workerPid: backendStatus.pid,
               modelLoadMs: backendStatus.modelLoadMs,

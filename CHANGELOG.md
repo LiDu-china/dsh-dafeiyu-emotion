@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Added `ttsOnlyAfterVoice` (default `true`): spoken replies are limited to assistant messages within two minutes of a voice input, so normal coding chats do not read every answer aloud.
+- Added the matching settings toggle.
+
 ## 0.3.1
 
 - Added spoken assistant replies. The host now forwards `assistant/message` text over `/plugins/dsh-dafeiyu-emotion/events`; the client plays it with TTS.

@@ -83,6 +83,7 @@ async function call(handler, req) {
     language: 'EN',
     empathyStyle: 'DIRECT',
     ttsEnabled: true,
+    ttsOnlyAfterVoice: false,
     ttsEngine: 'BROWSER',
     ttsVoice: 'zh-CN-XiaoxiaoNeural',
     ttsRate: '+10%',
@@ -97,6 +98,7 @@ async function call(handler, req) {
   assert.equal(patch.language, 'en')
   assert.equal(patch.empathyStyle, 'direct')
   assert.equal(patch.ttsEnabled, true)
+  assert.equal(patch.ttsOnlyAfterVoice, false)
   assert.equal(patch.ttsEngine, 'browser')
   assert.equal(patch.ttsVoice, 'zh-CN-XiaoxiaoNeural')
   assert.equal(patch.ttsRate, '+10%')

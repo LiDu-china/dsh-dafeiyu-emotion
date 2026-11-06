@@ -30,6 +30,7 @@
         language: zh
         empathyStyle: gentle
         ttsEnabled: true
+        ttsOnlyAfterVoice: true
         ttsEngine: piper
         ttsVoice: zh-CN-XiaoyiNeural
         ttsRate: "+6%"

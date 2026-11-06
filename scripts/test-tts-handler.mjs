@@ -168,7 +168,13 @@ function json(res) {
 // An assistant message is broadcast to the SSE client with its text.
 {
   const { ctx, handlers, emitSession } = makeCtx()
-  apply(ctx, { enabled: true, backendRoot: '', ttsEnabled: true, ttsEngine: 'browser' })
+  apply(ctx, {
+    enabled: true,
+    backendRoot: '',
+    ttsEnabled: true,
+    ttsOnlyAfterVoice: false,
+    ttsEngine: 'browser',
+  })
   const res = makeRes()
   await handlers.get(EVENTS)(makeReq({ method: 'GET' }), res)
   emitSession(
