@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 
-import { apply } from '../src/index.js'
+import { apply, inject } from '../src/index.js'
+
+assert.ok(inject.includes('webServer'), 'webServer must be a declared dependency')
+assert.ok(inject.includes('settings'), 'settings must be a declared dependency')
 
 const ANALYZE = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH = '/plugins/dsh-dafeiyu-emotion/health'

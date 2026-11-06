@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+
+- Fixed a host activation failure: `apply` read `ctx.settings` while the plugin only declared `webServer`. Cordis throws `cannot get property "settings" without inject`, so the whole host plugin failed to mount and `/plugins/dsh-dafeiyu-emotion/config` returned 404.
+- Added `settings` to the declared inject list so the host can mount and register the health, analyze and config routes.
+- Added a regression assertion that both `webServer` and `settings` are declared dependencies.
+
 ## 0.2.6
 
 - Fixed a blocking `Config` validation error: the 12 MiB `maxAudioBytes` default violated the old 1 MiB step relative to the 256 KiB minimum. Removed the schema step so the shipped default and the settings inputs validate.

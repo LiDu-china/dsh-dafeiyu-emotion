@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'dsh-dafeiyu-emotion'
-export const inject = ['webServer']
+export const inject = ['webServer', 'settings']
 
 const ANALYZE_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/health'
