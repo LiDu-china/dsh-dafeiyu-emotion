@@ -142,11 +142,16 @@ function asNumber(value, fallback) {
  * Unwrap them before path/string/number handling, otherwise String(ref)
  * becomes "[object Object]" and a path is resolved into the profile cwd.
  */
-function plainConfig(value) {
-  if (value && typeof value.get === 'function') return plainConfig(value.get())
-  if (Array.isArray(value)) return value.map(plainConfig)
+function plainConfig(value, seen = new WeakSet(), depth = 0) {
+  if (depth > 20) return undefined
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfig(child)]))
+    if (seen.has(value)) return undefined
+    seen.add(value)
+  }
+  if (value && typeof value.get === 'function') return plainConfig(value.get(), seen, depth + 1)
+  if (Array.isArray(value)) return value.map((child) => plainConfig(child, seen, depth + 1))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfig(child, seen, depth + 1)]))
   }
   return value
 }
@@ -953,10 +958,11 @@ export function apply(ctx, rawConfig = {}) {
   const logger = ctx.logger ?? console
   let settingsService = ctx.settings
   const runtime = {
-    options: resolveOptions({
-      ...rawConfig,
-      ...(readSettings(settingsService) || {}),
-    }),
+    // Do not call settings.describe() here: this runs inside the host's
+    // startup transaction and describing every plugin can deadlock the host.
+    // The patch config is authoritative at mount time; PATCH updates the
+    // shared runtime object and settings.update persists it for the next boot.
+    options: resolveOptions(rawConfig),
   }
   const backend = new VoiceBackend(runtime.options, logger)
   if (runtime.options.backendRoot && !existsSync(runtime.options.backendRoot)) {
@@ -965,11 +971,6 @@ export function apply(ctx, rawConfig = {}) {
   let speechToText
   ctx.inject(['settings'], (settingsCtx) => {
     settingsService = settingsCtx.settings
-    const stored = readSettings(settingsService)
-    if (!stored) return
-    const before = { ...runtime.options }
-    Object.assign(runtime.options, resolveOptions({ ...runtime.options, ...stored }))
-    backend.syncOptions(before)
   })
   ctx.inject(['speechToText'], (speechCtx) => {
     speechToText = speechCtx.speechToText

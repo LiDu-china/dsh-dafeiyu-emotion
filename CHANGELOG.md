@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.9
+
+- Fixed the host startup timeout: `apply` synchronously called `settings.describe()` while the host was still mounting plugins, which could deadlock startup for 60 seconds.
+- `apply` now uses the patch config only; settings are read/written through `/config` after the host is up.
+- Added cycle/depth guards to `plainConfig()` so an unexpected volatile-ref cycle cannot hang startup or a settings request.
+- Added a regression test where `settings.describe()` throws if called during `apply`.
+
 ## 0.2.8
 
 - Fixed `backendRoot` showing as `[object Object]` on the settings page. DSH projects volatile `Config` fields as `{ get() }` refs; `readSettings()` and `resolveOptions()` now unwrap them before path/string/number handling.

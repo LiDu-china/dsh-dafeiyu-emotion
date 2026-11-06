@@ -14,6 +14,12 @@ function makeCtx(speechToText) {
   const handlers = new Map()
   const ctx = {
     logger: { debug() {}, info() {}, error() {} },
+    settings: {
+      async update() {},
+      describe() {
+        throw new Error('settings.describe must not run during host startup')
+      },
+    },
     effect(run) {
       const dispose = run()
       return typeof dispose === 'function' ? dispose : () => {}
@@ -35,6 +41,14 @@ function makeCtx(speechToText) {
       } else if (dependencies.includes('speechToText')) {
         callback({
           speechToText,
+          effect(run) {
+            const dispose = run()
+            return typeof dispose === 'function' ? dispose : () => {}
+          },
+        })
+      } else if (dependencies.includes('settings')) {
+        callback({
+          settings: ctx.settings,
           effect(run) {
             const dispose = run()
             return typeof dispose === 'function' ? dispose : () => {}
