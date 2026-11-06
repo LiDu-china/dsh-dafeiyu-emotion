@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { Config, plainConfig, resolveOptions } from '../src/index.js'
+import { Config, buildPrompt, plainConfig, resolveOptions } from '../src/index.js'
 
 // The DSH settings service parses the schema with its defaults before a plugin
 // row can become configurable. A default that violates its own step/min/max
@@ -20,6 +20,7 @@ assert.doesNotThrow(
     backendRoot: 'D:/voice-sense',
     pythonPath: 'D:/voice-sense/.venv-ser/Scripts/python.exe',
     language: 'auto',
+    empathyStyle: 'direct',
     maxAudioBytes: 8 * 1024 * 1024,
     startupTimeoutMs: 180000,
     requestTimeoutMs: 180000,
@@ -32,6 +33,7 @@ for (const key of [
   'backendRoot',
   'pythonPath',
   'language',
+  'empathyStyle',
   'maxAudioBytes',
   'startupTimeoutMs',
   'requestTimeoutMs',
@@ -48,6 +50,11 @@ assert.throws(
   () => Config({ language: 'fr' }),
   /language/,
   'unknown languages must be rejected by the schema',
+)
+assert.throws(
+  () => Config({ empathyStyle: 'sarcastic' }),
+  /empathyStyle/,
+  'unknown empathy styles must be rejected by the schema',
 )
 
 // DSH projects volatile fields as { get() } refs. They must be unwrapped
@@ -74,6 +81,7 @@ assert.throws(
   assert.ok(options.backendRoot.endsWith('voice-sense'))
   assert.equal(options.language, 'auto')
   assert.equal(options.maxAudioBytes, 8 * 1024 * 1024)
+  assert.equal(options.empathyStyle, 'gentle')
 
   const shared = { x: 1 }
   assert.deepEqual(
@@ -89,6 +97,21 @@ assert.throws(
   const cycle = {}
   cycle.self = cycle
   assert.deepEqual(plainConfig(cycle), { self: undefined }, 'a real cycle must be cut')
+}
+
+// Each empathy style must produce a distinguishable reply instruction.
+{
+  const analysis = {
+    transcript: '今天有点累',
+    emotion: 'sad',
+    confidence: 0.72,
+    toneSummary: '低落，语速偏慢',
+    segments: [{ text: '今天有点累', start: 0, end: 2, emotion: 'sad', confidence: 0.72 }],
+  }
+  assert.match(buildPrompt(analysis, 'gentle'), /承接/)
+  assert.match(buildPrompt(analysis, 'direct'), /清晰结论/)
+  assert.match(buildPrompt(analysis, 'humorous'), /幽默/)
+  assert.match(buildPrompt(analysis, 'concise'), /简短/)
 }
 
 console.log('config schema tests passed')

@@ -23,6 +23,13 @@ function baseOptions(overrides = {}) {
   }
 }
 
+function writableSettings(update = async () => {}) {
+  return {
+    describe: () => [{ ns: NAMESPACE, revision: 7, value: {}, user: {} }],
+    update,
+  }
+}
+
 function makeReq({ body, method = 'GET', remoteAddress = '127.0.0.1' } = {}) {
   const payload = body === undefined ? '' : JSON.stringify(body)
   const req = Readable.from([Buffer.from(payload)])
@@ -74,6 +81,7 @@ async function call(handler, req) {
   const patch = normalizeConfigPatch({
     enabled: false,
     language: 'EN',
+    empathyStyle: 'DIRECT',
     maxAudioBytes: 1,
     startupTimeoutMs: 1,
     requestTimeoutMs: 999999,
@@ -82,6 +90,7 @@ async function call(handler, req) {
   })
   assert.equal(patch.enabled, false)
   assert.equal(patch.language, 'en')
+  assert.equal(patch.empathyStyle, 'direct')
   assert.equal(patch.maxAudioBytes, 256 * 1024)
   assert.equal(patch.startupTimeoutMs, 10000)
   assert.equal(patch.requestTimeoutMs, 600000)
@@ -94,6 +103,7 @@ async function call(handler, req) {
   assert.throws(() => normalizeConfigPatch({ nope: true }), /未知配置项/)
   assert.throws(() => normalizeConfigPatch({ enabled: 'yes' }), /布尔值/)
   assert.throws(() => normalizeConfigPatch({ language: 'fr' }), /language/)
+  assert.throws(() => normalizeConfigPatch({ empathyStyle: 'sarcastic' }), /empathyStyle/)
   assert.throws(() => normalizeConfigPatch({ backendRoot: 'C:\\bad\u0000path' }), /本地路径/)
   assert.throws(() => normalizeConfigPatch(null), /对象/)
   assert.throws(() => normalizeConfigPatch({ maxAudioBytes: true }), /整数/)
@@ -107,12 +117,13 @@ async function call(handler, req) {
   const handler = createConfigHandler({
     runtime,
     backend: { syncOptions() {} },
-    getSettings: () => ({ update: async () => {} }),
+    getSettings: () => writableSettings(),
   })
   const res = await call(handler, makeReq())
   assert.equal(res.status, 200)
   assert.equal(json(res).language, 'en')
   assert.equal(json(res).writable, true)
+  assert.equal(json(res).revision, 7)
 }
 
 // PATCH writes the settings namespace and updates the shared runtime object.
@@ -127,20 +138,19 @@ async function call(handler, req) {
   const handler = createConfigHandler({
     runtime,
     backend,
-    getSettings: () => ({
-      update: async (namespace, patch) => {
-        updates.push({ namespace, patch })
-      },
-    }),
+    getSettings: () => writableSettings(async (namespace, patch, revision) => {
+        updates.push({ namespace, patch, revision })
+      }),
   })
   const res = await call(handler, makeReq({
     method: 'PATCH',
-    body: { language: 'en', maxAudioBytes: 1024 * 1024 },
+    body: { language: 'en', maxAudioBytes: 1024 * 1024, expectedRevision: 7 },
   }))
   assert.equal(res.status, 200)
   assert.equal(updates.length, 1)
   assert.equal(updates[0].namespace, NAMESPACE)
   assert.deepEqual(updates[0].patch, { language: 'en', maxAudioBytes: 1024 * 1024 })
+  assert.equal(updates[0].revision, 7)
   assert.equal(runtime.options.language, 'en')
   assert.equal(runtime.options.maxAudioBytes, 1024 * 1024)
   assert.equal(backend.previous.maxAudioBytes, 12 * 1024 * 1024)
@@ -168,7 +178,7 @@ async function call(handler, req) {
   const handler = createConfigHandler({
     runtime,
     backend: { syncOptions() {} },
-    getSettings: () => ({ update: async () => {} }),
+    getSettings: () => writableSettings(),
   })
   const forbidden = await call(handler, makeReq({ remoteAddress: '10.0.0.5' }))
   assert.equal(forbidden.status, 403)
@@ -182,7 +192,7 @@ async function call(handler, req) {
   const handler = createConfigHandler({
     runtime,
     backend: { syncOptions() {} },
-    getSettings: () => ({ update: async () => {} }),
+    getSettings: () => writableSettings(),
   })
   const invalid = await call(handler, makeReq({ method: 'PATCH', body: undefined }))
   assert.equal(invalid.status, 400)

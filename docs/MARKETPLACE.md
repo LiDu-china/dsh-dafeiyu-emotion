@@ -72,7 +72,7 @@ https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-d
 dsh plugin --profile desktop add dsh-dafeiyu-emotion
 ```
 
-Published as `dsh-dafeiyu-emotion@0.2.9` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source and Release-tarball installs remain available as fallbacks.
+Published as `dsh-dafeiyu-emotion@0.3.0` on npm. The 1024Store entry refreshes its one-click install automatically. GitHub-source and Release-tarball installs remain available as fallbacks.
 
 ## Privacy
 

@@ -9,6 +9,7 @@ assert.equal(inject.includes('settings'), false, 'settings must be resolved dyna
 
 const ANALYZE = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH = '/plugins/dsh-dafeiyu-emotion/health'
+const CONTEXT = '/plugins/dsh-dafeiyu-emotion/context'
 
 function makeCtx(speechToText) {
   const handlers = new Map()
@@ -133,6 +134,16 @@ async function call(handler, req) {
   apply(ctx, { enabled: true, backendRoot: '' })
   const res = await call(handlers.get(ANALYZE), makeReq({ method: 'GET' }))
   assert.equal(res.status, 405)
+}
+
+// The shared emotion context endpoint is local-only and starts empty.
+{
+  const { ctx, handlers } = makeCtx(undefined)
+  apply(ctx, { enabled: true, backendRoot: '', empathyStyle: 'direct' })
+  const context = await call(handlers.get(CONTEXT), makeReq({ method: 'GET' }))
+  assert.equal(context.status, 200)
+  assert.equal(json(context).lastAnalysis, null)
+  assert.equal(json(context).empathyStyle, 'direct')
 }
 
 // Body too large is 413, not 500.

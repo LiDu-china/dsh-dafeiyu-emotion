@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+- Added `empathyStyle` with four reply strategies: gentle, direct, humorous and concise. The choice is persisted and injected into the emotion-aware prompt.
+- Added an in-composer emotion timeline for analyses with multiple segments; hovering a segment shows its text, emotion and confidence.
+- Added privacy/runtime status to the settings panel and `/health`: last emotion, last audio size, model load time, worker PID and last temp cleanup time.
+- Added local-only `GET /plugins/dsh-dafeiyu-emotion/context` so other plugins can read the latest emotion context.
+- Settings now resolve the real `entry.ns` from `settings.describe()` instead of assuming the npm package name.
+- Settings writes now carry the settings revision and return 409 on a concurrent-window conflict.
+- Removed the hard `settings` inject; settings are resolved dynamically after the host is up.
+- Moved Python discovery to the first worker start, removing the synchronous filesystem stat from `apply`.
+- An explicit empty `backendRoot` now clears the environment fallback, so the UI can disable the enhanced backend.
+- Shortcut resolution now prefers the most recently used fish-ear instead of the last mounted one.
+- Narrow sidebar fields wrap instead of squeezing controls.
+- Removed test scripts from the published npm tarball.
+
 ## 0.2.10
 
 - Removed `settings` from the hard inject list. A hard `settings` dependency can deadlock host startup while the settings service is still building plugin `Config` projections.

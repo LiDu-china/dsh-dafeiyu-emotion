@@ -28,6 +28,7 @@
         backendRoot: ""
         pythonPath: ""
         language: zh
+        empathyStyle: gentle
         maxAudioBytes: 12582912
         startupTimeoutMs: 180000
         requestTimeoutMs: 180000

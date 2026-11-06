@@ -13,6 +13,7 @@ export const inject = ['webServer']
 const ANALYZE_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/health'
 const CONFIG_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/config'
+const CONTEXT_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/context'
 const SETTINGS_NAMESPACE = 'dsh-dafeiyu-emotion'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -26,6 +27,7 @@ const DEFAULTS = Object.freeze({
   maxAudioBytes: 12 * 1024 * 1024,
   startupTimeoutMs: 180000,
   requestTimeoutMs: 180000,
+  empathyStyle: 'gentle',
 })
 
 const CONFIG_FIELDS = new Set(Object.keys(DEFAULTS))
@@ -61,6 +63,12 @@ export const Config = Schema.object({
     .default(180000)
     .description('单次分析超时（毫秒）')
     .volatile(),
+  empathyStyle: Schema.union([
+    Schema.const('gentle').description('温柔'),
+    Schema.const('direct').description('直接'),
+    Schema.const('humorous').description('幽默'),
+    Schema.const('concise').description('简洁'),
+  ]).default('gentle').description('共情策略').volatile(),
 }).description('大肥鱼语音情绪耳朵')
 
 const EMOTION_ZH = Object.freeze({
@@ -160,13 +168,19 @@ function plainConfig(value, stack = new WeakSet(), depth = 0) {
 
 function resolveOptions(raw = {}) {
   const value = plainConfig(raw)
+  const backendSource = value.backendRoot === undefined
+    ? process.env.DSH_DAFEIYU_EMOTION_BACKEND
+    : value.backendRoot
   return {
     enabled: value.enabled !== false,
-    backendRoot: String(value.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot).trim()
-      ? resolve(String(value.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot))
+    backendRoot: String(backendSource || DEFAULTS.backendRoot).trim()
+      ? resolve(String(backendSource || DEFAULTS.backendRoot))
       : '',
     pythonPath: String(value.pythonPath || '').trim(),
     language: ['zh', 'en', 'auto'].includes(value.language) ? value.language : DEFAULTS.language,
+    empathyStyle: ['gentle', 'direct', 'humorous', 'concise'].includes(value.empathyStyle)
+      ? value.empathyStyle
+      : DEFAULTS.empathyStyle,
     maxAudioBytes: Math.min(32 * 1024 * 1024, Math.max(256 * 1024, asNumber(value.maxAudioBytes, DEFAULTS.maxAudioBytes))),
     startupTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.startupTimeoutMs, DEFAULTS.startupTimeoutMs))),
     requestTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.requestTimeoutMs, DEFAULTS.requestTimeoutMs))),
@@ -179,6 +193,7 @@ function publicConfig(options, writable = false) {
     backendRoot: options.backendRoot || '',
     pythonPath: options.pythonPath || '',
     language: options.language || DEFAULTS.language,
+    empathyStyle: options.empathyStyle || DEFAULTS.empathyStyle,
     maxAudioBytes: options.maxAudioBytes,
     startupTimeoutMs: options.startupTimeoutMs,
     requestTimeoutMs: options.requestTimeoutMs,
@@ -204,6 +219,14 @@ function normalizeConfigPatch(value) {
       patch.language = language
       continue
     }
+    if (key === 'empathyStyle') {
+      const style = String(next || '').trim().toLowerCase()
+      if (!['gentle', 'direct', 'humorous', 'concise'].includes(style)) {
+        throw new HttpError(400, 'empathyStyle 只能是 gentle、direct、humorous 或 concise')
+      }
+      patch.empathyStyle = style
+      continue
+    }
     if (key === 'backendRoot' || key === 'pythonPath') {
       if (typeof next !== 'string') throw new HttpError(400, `${key} 必须是字符串`)
       const text = next.trim()
@@ -226,12 +249,18 @@ function normalizeConfigPatch(value) {
   return patch
 }
 
-function readSettings(service) {
+function resolveSettings(service) {
   if (typeof service?.describe !== 'function') return null
   try {
-    const entry = service.describe().find((row) => row?.ns === SETTINGS_NAMESPACE)
+    const entries = service.describe()
+    const entry = entries.find((row) => row?.ns === SETTINGS_NAMESPACE)
+      ?? entries.find((row) => row?.value && ('backendRoot' in row.value || 'maxAudioBytes' in row.value))
     if (!entry) return null
-    return plainConfig({ ...(entry.value || {}), ...(entry.user || {}) })
+    return {
+      ns: entry.ns,
+      revision: Number.isInteger(entry.revision) ? entry.revision : null,
+      value: plainConfig({ ...(entry.value || {}), ...(entry.user || {}) }),
+    }
   } catch {
     return null
   }
@@ -244,9 +273,14 @@ function createConfigHandler({ runtime, backend, getSettings }) {
       return
     }
     const settings = getSettings()
-    const writable = typeof settings?.update === 'function'
+    const stored = resolveSettings(settings)
+    const writable = Boolean(stored?.ns && typeof settings?.update === 'function')
     if (req.method === 'GET') {
-      jsonResponse(res, 200, publicConfig(runtime.options, writable))
+      const options = stored ? resolveOptions({ ...runtime.options, ...stored.value }) : runtime.options
+      jsonResponse(res, 200, {
+        ...publicConfig(options, writable),
+        revision: stored?.revision ?? null,
+      })
       return
     }
     if (req.method !== 'PATCH') {
@@ -260,15 +294,27 @@ function createConfigHandler({ runtime, backend, getSettings }) {
       return
     }
     try {
-      const patch = normalizeConfigPatch(await readJsonBody(req, 16 * 1024))
+      const body = await readJsonBody(req, 16 * 1024)
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+        throw new HttpError(400, '配置必须是一个对象')
+      }
+      const expectedRevision = Number.isInteger(body?.expectedRevision) ? body.expectedRevision : undefined
+      const { expectedRevision: _expectedRevision, ...configBody } = body
+      const patch = normalizeConfigPatch(configBody)
       const before = { ...runtime.options }
-      await settings.update(SETTINGS_NAMESPACE, patch)
+      await settings.update(stored.ns, patch, expectedRevision)
       const next = resolveOptions({ ...runtime.options, ...patch })
       Object.assign(runtime.options, next)
       backend.syncOptions(before)
-      jsonResponse(res, 200, publicConfig(runtime.options, true))
+      const nextStored = resolveSettings(settings)
+      jsonResponse(res, 200, {
+        ...publicConfig(runtime.options, true),
+        revision: nextStored?.revision ?? null,
+      })
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : 400
+      const conflict = error?.name === 'SettingsConflictError'
+        || /changed since it was read/.test(error?.message || '')
+      const status = conflict ? 409 : error instanceof HttpError ? error.status : 500
       jsonResponse(res, status, {
         error: error instanceof Error ? error.message : String(error),
       })
@@ -332,7 +378,14 @@ function buildToneSummary(analysis) {
   return [base, ...notes].filter(Boolean).join('，')
 }
 
-function buildPrompt(analysis) {
+const EMPATHY_STYLES = Object.freeze({
+  gentle: '先自然承接对方的情绪，再回答问题；语气柔和，情绪明显时先共情、后给建议，避免机械说教或过度热情。',
+  direct: '先用一句话确认你听到的重点，再给出清晰结论和下一步；直接但不冷漠，不绕弯。',
+  humorous: '可以先轻轻接住情绪，再用一点轻松的幽默缓和气氛；不要拿对方的情绪开玩笑，也不要在严肃问题上强行搞笑。',
+  concise: '用一两句话承接情绪，然后直接回答；不展开分析，不复述情绪标签，保持简短。',
+})
+
+function buildPrompt(analysis, style = 'gentle') {
   const transcript = String(analysis.transcript || '').trim()
   const confidence = numberOrNull(analysis.confidence)
   const confidenceText = confidence === null ? '未知' : `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`
@@ -347,7 +400,7 @@ function buildPrompt(analysis) {
     '【语音情绪参考｜只用来调整回复方式，不要逐字复述，也不要声称能读心】',
     `主要情绪：${EMOTION_ZH[analysis.emotion] || analysis.emotion || '平静'}（置信度 ${confidenceText}）`,
     `语气特征：${tone}${timeline}`,
-    '回复要求：先自然承接对方的情绪状态，再回答问题；情绪明显时先共情、后给建议，避免机械说教或过度热情。',
+    `回复要求：${EMPATHY_STYLES[style] || EMPATHY_STYLES.gentle}`,
   ].join('\n')
 }
 
@@ -483,7 +536,7 @@ function buildFallbackAnalysis(transcript, prosody = {}) {
   }
 }
 
-function decorateAnalysis(raw) {
+function decorateAnalysis(raw, style = 'gentle') {
   const analysis = {
     ...raw,
     emotion: raw.emotion || 'neutral',
@@ -495,7 +548,7 @@ function decorateAnalysis(raw) {
     features: raw.features && typeof raw.features === 'object' ? raw.features : {},
   }
   analysis.toneSummary = buildToneSummary(analysis)
-  analysis.prompt = buildPrompt(analysis)
+  analysis.prompt = buildPrompt(analysis, style)
   return analysis
 }
 
@@ -503,7 +556,9 @@ class VoiceBackend {
   constructor(options, logger) {
     this.options = options
     this.logger = logger
-    this.python = locatePython(options)
+    this.python = options.pythonPath || null
+    this.startedAt = null
+    this.readyAt = null
     this.proc = null
     this.ready = null
     this.startup = null
@@ -565,7 +620,9 @@ class VoiceBackend {
    */
   syncOptions(previous = {}) {
     const next = this.options
-    this.python = locatePython(next)
+    this.python = next.pythonPath || null
+    this.startedAt = null
+    this.readyAt = null
     this.closed = !next.enabled
     const restart = previous.backendRoot !== next.backendRoot
       || previous.pythonPath !== next.pythonPath
@@ -592,6 +649,7 @@ class VoiceBackend {
       pid: this.proc?.pid ?? null,
       python: this.python,
       backendRoot: this.options.backendRoot,
+      modelLoadMs: this.startedAt && this.readyAt ? this.readyAt - this.startedAt : null,
       lastError: this.lastError,
     }
   }
@@ -613,6 +671,9 @@ class VoiceBackend {
         rejectPromise(new Error(this.lastError))
         return
       }
+      if (!this.python) this.python = locatePython(this.options)
+      this.startedAt = Date.now()
+      this.readyAt = null
       const proc = spawn(this.python, [defaultWorker, this.options.backendRoot], {
         cwd: this.options.backendRoot,
         windowsHide: true,
@@ -652,6 +713,7 @@ class VoiceBackend {
           return
         }
         this.ready = true
+        this.readyAt = Date.now()
         this.lastError = null
         resolvePromise()
       }
@@ -799,8 +861,8 @@ class VoiceBackend {
     return task
   }
 
-  async analyze(wavPath, signal) {
-    return decorateAnalysis(await this.request(wavPath, signal))
+  async analyze(wavPath, signal, style = 'gentle') {
+    return decorateAnalysis(await this.request(wavPath, signal), style)
   }
 
   async close() {
@@ -922,7 +984,7 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
       }
       if (options.backendRoot && existsSync(options.backendRoot)) {
         try {
-          analysis = await backend.analyze(wavPath.replaceAll('\\', '/'), controller.signal)
+          analysis = await backend.analyze(wavPath.replaceAll('\\', '/'), controller.signal, options.empathyStyle)
         } catch (error) {
           localError = error instanceof Error ? error.message : String(error)
         }
@@ -931,7 +993,7 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
       if (!analysis) {
         try {
           const transcript = await transcribeWithSpeech(buffer, options, getSpeechToText(), controller.signal)
-          analysis = decorateAnalysis(buildFallbackAnalysis(transcript, body.prosody || {}))
+          analysis = decorateAnalysis(buildFallbackAnalysis(transcript, body.prosody || {}), options.empathyStyle)
         } catch (speechError) {
           const parts = []
           if (localError) parts.push(`本地增强后端：${localError}`)
@@ -940,6 +1002,16 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
         }
       }
       if (controller.signal.aborted || res.writableEnded) return
+      runtime.lastAnalysis = {
+        emotion: analysis.emotion,
+        emotionZh: analysis.emotionZh,
+        confidence: analysis.confidence,
+        toneSummary: analysis.toneSummary,
+        source: analysis.source,
+        at: new Date().toISOString(),
+      }
+      runtime.lastAudioBytes = buffer.length
+      runtime.lastAnalysisAt = runtime.lastAnalysis.at
       jsonResponse(res, 200, analysis)
     } catch (error) {
       if (controller?.signal.aborted || res.writableEnded) return
@@ -951,7 +1023,10 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
     } finally {
       req.off?.('aborted', onClose)
       res.off?.('close', onClose)
-      if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      if (tempDir) {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {})
+        runtime.lastCleanupAt = new Date().toISOString()
+      }
     }
   }
 }
@@ -968,11 +1043,12 @@ export function apply(ctx, rawConfig = {}) {
     // The patch config is authoritative at mount time; PATCH updates the
     // shared runtime object and settings.update persists it for the next boot.
     options: resolveOptions(rawConfig),
+    lastAnalysis: null,
+    lastAudioBytes: 0,
+    lastAnalysisAt: null,
+    lastCleanupAt: null,
   }
   const backend = new VoiceBackend(runtime.options, logger)
-  if (runtime.options.backendRoot && !existsSync(runtime.options.backendRoot)) {
-    backend.noteError(`语音后端目录不存在：${runtime.options.backendRoot}`)
-  }
   let speechToText
   ctx.inject(['settings'], (settingsCtx) => {
     settingsService = settingsCtx.settings
@@ -1001,11 +1077,15 @@ export function apply(ctx, rawConfig = {}) {
           const backendAvailable = backendConfigured && existsSync(options.backendRoot)
           if (backendAvailable && backend.lastError?.startsWith('语音后端目录不存在：')) {
             backend.noteError(null)
+          } else if (backendConfigured && !backendAvailable && !backend.lastError) {
+            backend.noteError(`语音后端目录不存在：${options.backendRoot}`)
           }
+          const backendStatus = backend.status()
           jsonResponse(res, 200, {
             ok: true,
             enabled: options.enabled,
             language: options.language,
+            empathyStyle: options.empathyStyle,
             engine: backendAvailable ? 'SenseVoice + emotion2vec' : 'DSH Speech + prosody',
             mode: !backendConfigured
               ? 'dsh-speech-prosody'
@@ -1017,7 +1097,15 @@ export function apply(ctx, rawConfig = {}) {
             speechPhase: speech.phase,
             backendConfigured,
             backendAvailable,
-            ...backend.status(),
+            lastAnalysis: runtime.lastAnalysis,
+            privacy: {
+              lastAudioBytes: runtime.lastAudioBytes,
+              lastAnalysisAt: runtime.lastAnalysisAt,
+              lastCleanupAt: runtime.lastCleanupAt,
+              workerPid: backendStatus.pid,
+              modelLoadMs: backendStatus.modelLoadMs,
+            },
+            ...backendStatus,
           })
         },
       }),
@@ -1043,6 +1131,29 @@ export function apply(ctx, rawConfig = {}) {
       }),
       'dsh-dafeiyu-emotion: 设置读写',
     )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: CONTEXT_ENDPOINT,
+        handler(req, res) {
+          if (!isLocalRequest(req)) {
+            jsonResponse(res, 403, { error: '只允许本机访问' })
+            return
+          }
+          if (req.method !== 'GET') {
+            jsonResponse(res, 405, { error: 'method not allowed' })
+            return
+          }
+          jsonResponse(res, 200, {
+            ok: true,
+            lastAnalysis: runtime.lastAnalysis,
+            empathyStyle: runtime.options.empathyStyle,
+            language: runtime.options.language,
+          })
+        },
+      }),
+      'dsh-dafeiyu-emotion: 最近情绪上下文',
+    )
   })
 
 }
@@ -1050,6 +1161,7 @@ export function apply(ctx, rawConfig = {}) {
 export {
   VoiceBackend,
   buildFallbackAnalysis,
+  buildPrompt,
   createConfigHandler,
   decorateAnalysis,
   normalizeConfigPatch,

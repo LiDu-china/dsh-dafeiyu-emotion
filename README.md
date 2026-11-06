@@ -72,6 +72,10 @@
 - ⌨️ DSH 原生语音快捷键，可在快捷键设置中自行改键；
 - 🎛️ DSH 设置页里的完整设置卡片：启用、语言、增强后端、超时和录音上限；
 - 🧭 安装 Better Sidebar 后，可把「情绪耳朵」固定到右侧边栏；
+- 🎭 共情策略四档：温柔、直接、幽默、简洁；
+- 📈 多段语音的情绪时间线，可悬停查看每段文本、情绪和置信度；
+- 🔐 设置页内的隐私与运行状态：最近音频大小、模型加载、worker PID、临时文件清理；
+- 🔌 本机 `/context` 接口，其他插件可以读取最近一次情绪上下文；
 - 🐋 大肥鱼主题的“鱼耳”入口，和普通对话共用同一个 composer；
 - 🧠 情绪标签：喜悦 / 低落 / 生气 / 紧张 / 惊讶 / 厌烦 / 平静；
 - 📈 额外给出 confidence、valence、arousal 和语气摘要；
@@ -111,9 +115,9 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.2.10.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.10/dsh-dafeiyu-emotion-0.2.10.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.10.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.3.0.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.0/dsh-dafeiyu-emotion-0.3.0.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.0.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。
@@ -130,6 +134,7 @@ dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.10.tgz"
 
 - 启用 / 停用情绪耳朵；
 - 识别语言：中文、English 或自动；
+- 共情策略：温柔、直接、幽默、简洁；
 - VoiceSense 增强后端目录与 Python 路径；
 - 单次录音上限、后端启动超时、单次分析超时。
 
@@ -184,6 +189,7 @@ dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.2.10.tgz"
 | `backendRoot` | 空 | VoiceSense 项目根目录；空则使用 DSH Voice Input 轻量模式 |
 | `pythonPath` | 空 | 自定义 Python；空则自动寻找 `.venv-ser` |
 | `language` | `zh` | 识别语言：`zh` / `en` / `auto` |
+| `empathyStyle` | `gentle` | 共情策略：`gentle` / `direct` / `humorous` / `concise` |
 | `maxAudioBytes` | 12 MB | 单次录音大小上限 |
 | `startupTimeoutMs` | 180000 | 首次加载增强后端的最长等待 |
 | `requestTimeoutMs` | 180000 | 单次分析请求超时 |
