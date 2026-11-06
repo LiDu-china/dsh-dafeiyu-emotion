@@ -32,39 +32,36 @@ const CONFIG_FIELDS = new Set(Object.keys(DEFAULTS))
 const LANGUAGES = new Set(['zh', 'en', 'auto'])
 
 export const Config = Schema.object({
-  enabled: Schema.boolean().default(true).description('启用情绪耳朵'),
-  backendRoot: Schema.string().default('').description('VoiceSense 项目目录'),
-  pythonPath: Schema.string().default('').description('Python 解释器路径'),
+  enabled: Schema.boolean().default(true).description('启用情绪耳朵').volatile(),
+  backendRoot: Schema.string().default('').description('VoiceSense 项目目录').volatile(),
+  pythonPath: Schema.string().default('').description('Python 解释器路径').volatile(),
   language: Schema.union([
     Schema.const('zh').description('中文'),
     Schema.const('en').description('English'),
     Schema.const('auto').description('自动'),
-  ]).default('zh').description('识别语言'),
+  ]).default('zh').description('识别语言').volatile(),
+  // Avoid step(): DSH validates numbers against (value - min) / step, and
+  // the old 1 MiB step rejected the 12 MiB default. The custom settings card
+  // already enforces its own input granularity.
   maxAudioBytes: Schema.number()
     .min(256 * 1024)
     .max(32 * 1024 * 1024)
-    .step(1024 * 1024)
     .default(12 * 1024 * 1024)
-    .description('单次录音上限（字节）'),
+    .description('单次录音上限（字节）')
+    .volatile(),
   startupTimeoutMs: Schema.number()
     .min(10000)
     .max(600000)
-    .step(5000)
     .default(180000)
-    .description('后端启动超时（毫秒）'),
+    .description('后端启动超时（毫秒）')
+    .volatile(),
   requestTimeoutMs: Schema.number()
     .min(10000)
     .max(600000)
-    .step(5000)
     .default(180000)
-    .description('单次分析超时（毫秒）'),
+    .description('单次分析超时（毫秒）')
+    .volatile(),
 }).description('大肥鱼语音情绪耳朵')
-
-// DSH settings only exposes fields marked volatile, and the settings panel
-// writes through the same projection. Mark every field, not the root object.
-for (const [key, field] of Object.entries(Config.dict)) {
-  Config.dict[key] = field.volatile()
-}
 
 const EMOTION_ZH = Object.freeze({
   happy: '喜悦',
@@ -194,8 +191,10 @@ function normalizeConfigPatch(value) {
       patch[key] = text
       continue
     }
-    const numeric = Number(next)
-    if (!Number.isFinite(numeric)) throw new HttpError(400, `${key} 必须是数字`)
+    if (typeof next !== 'number' || !Number.isFinite(next) || !Number.isInteger(next)) {
+      throw new HttpError(400, `${key} 必须是整数`)
+    }
+    const numeric = next
     if (key === 'maxAudioBytes') {
       patch.maxAudioBytes = Math.round(Math.min(32 * 1024 * 1024, Math.max(256 * 1024, numeric)))
     } else {
@@ -489,7 +488,11 @@ class VoiceBackend {
     this.startupAbort = null
     this.pending = new Map()
     this.nextId = 0
+    this.nextQueueId = 0
+    this.activeRequestId = null
     this.queue = Promise.resolve()
+    this.closed = false
+    this.generation = 0
     this.stderr = []
     this.lastError = null
   }
@@ -520,8 +523,13 @@ class VoiceBackend {
     } catch {}
   }
 
-  /** Abort the in-flight worker so a cancelled request cannot block the queue. */
-  cancel() {
+  /**
+   * Abort one request. A queued request that has not reached the worker yet
+   * must not kill the worker serving the active request; its own AbortSignal
+   * will make it exit before it writes anything.
+   */
+  cancel(requestId) {
+    if (requestId !== undefined && this.activeRequestId !== requestId) return
     const proc = this.proc
     if (!proc) return
     this.stopProcess(proc, { error: createAbortError(), preserveLastError: true })
@@ -536,6 +544,7 @@ class VoiceBackend {
   syncOptions(previous = {}) {
     const next = this.options
     this.python = locatePython(next)
+    this.closed = !next.enabled
     const restart = previous.backendRoot !== next.backendRoot
       || previous.pythonPath !== next.pythonPath
       || previous.startupTimeoutMs !== next.startupTimeoutMs
@@ -566,6 +575,9 @@ class VoiceBackend {
   }
 
   ensureStarted() {
+    if (this.closed || !this.options.enabled) {
+      return Promise.reject(new Error('情绪耳朵已关闭'))
+    }
     if (this.proc && !this.proc.killed && this.ready) return Promise.resolve()
     if (this.startup) return this.startup
     this.startup = new Promise((resolvePromise, rejectPromise) => {
@@ -704,14 +716,25 @@ class VoiceBackend {
     return this.startup
   }
 
-  request(wavPath) {
+  request(wavPath, signal) {
+    const requestId = ++this.nextQueueId
+    const generation = this.generation
     const run = async () => {
+      if (this.closed || generation !== this.generation) throw new Error('语音后端已关闭')
+      if (signal?.aborted) throw createAbortError()
       await this.ensureStarted()
+      if (this.closed || generation !== this.generation) throw new Error('语音后端已关闭')
+      if (signal?.aborted) throw createAbortError()
       const proc = this.proc
       if (!proc || proc.killed || !proc.stdin) throw new Error('语音后端不可用')
+      this.activeRequestId = requestId
       const id = ++this.nextId
       let settled = false
       let timer
+      const onAbort = () => {
+        if (this.activeRequestId === requestId) this.cancel(requestId)
+      }
+      signal?.addEventListener?.('abort', onAbort, { once: true })
       const result = new Promise((resolvePromise, rejectPromise) => {
         const finish = (callback, value) => {
           if (settled) return
@@ -738,20 +761,30 @@ class VoiceBackend {
         this.lastError = `语音后端写入失败：${wrapped.message}`
         this.stopProcess(proc, { error: wrapped, preserveLastError: true })
         result.catch(() => {})
+        signal?.removeEventListener?.('abort', onAbort)
+        if (this.activeRequestId === requestId) this.activeRequestId = null
         throw wrapped
       }
-      return result
+      try {
+        return await result
+      } finally {
+        signal?.removeEventListener?.('abort', onAbort)
+        if (this.activeRequestId === requestId) this.activeRequestId = null
+      }
     }
     const task = this.queue.then(run, run)
     this.queue = task.catch(() => {})
     return task
   }
 
-  async analyze(wavPath) {
-    return decorateAnalysis(await this.request(wavPath))
+  async analyze(wavPath, signal) {
+    return decorateAnalysis(await this.request(wavPath, signal))
   }
 
   async close() {
+    this.closed = true
+    this.generation += 1
+    this.activeRequestId = null
     const proc = this.proc
     this.startupAbort?.()
     this.proc = null
@@ -839,7 +872,6 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
     const onClose = () => {
       if (res.writableEnded) return
       controller?.abort()
-      backend.cancel()
     }
     try {
       controller = new AbortController()
@@ -868,7 +900,7 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
       }
       if (options.backendRoot && existsSync(options.backendRoot)) {
         try {
-          analysis = await backend.analyze(wavPath.replaceAll('\\', '/'))
+          analysis = await backend.analyze(wavPath.replaceAll('\\', '/'), controller.signal)
         } catch (error) {
           localError = error instanceof Error ? error.message : String(error)
         }
@@ -995,6 +1027,7 @@ export function apply(ctx, rawConfig = {}) {
 }
 
 export {
+  VoiceBackend,
   buildFallbackAnalysis,
   createConfigHandler,
   decorateAnalysis,

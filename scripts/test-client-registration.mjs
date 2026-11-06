@@ -117,13 +117,13 @@ client.apply(ctx)
 assert.ok(injected.includes('conversation.input.activity'), 'voice activity slot is injected')
 assert.ok(injected.includes('plugins.bundle.config'), 'bundle config slot is injected')
 assert.ok(injected.includes('settings.plugins.tab'), 'settings tab slot is injected')
-assert.ok(injected.includes('settings.plugin.item'), 'settings item slot is injected')
+assert.equal(injected.includes('settings.plugin.item'), false, 'undeclared settings item slot is not injected')
 
 const names = registrations.map((entry) => entry.spec.name)
 assert.ok(names.includes('conversation.input.activity'))
 assert.ok(names.includes('plugins.bundle.config'))
 assert.ok(names.includes('settings.plugins.tab'))
-assert.ok(names.includes('settings.plugin.item'))
+assert.equal(names.includes('settings.plugin.item'), false)
 
 for (const entry of registrations) {
   assert.equal(entry.spec.id, 'dsh-dafeiyu-emotion')

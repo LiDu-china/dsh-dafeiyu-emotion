@@ -99,6 +99,17 @@ async function call(handler, req) {
   assert.equal(json(res).error, '只允许本机访问')
 }
 
+// Disabling the plugin must stop analysis even if the route stays mounted.
+{
+  const { ctx, handlers } = makeCtx(undefined)
+  apply(ctx, { enabled: false, backendRoot: '' })
+  const res = await call(handlers.get(ANALYZE), makeReq({
+    body: { audioBase64: 'AA==' },
+  }))
+  assert.equal(res.status, 503)
+  assert.match(json(res).error, /已.*关闭/)
+}
+
 // Wrong method is rejected.
 {
   const { ctx, handlers } = makeCtx(undefined)

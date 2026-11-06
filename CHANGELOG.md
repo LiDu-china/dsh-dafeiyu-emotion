@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.6
+
+- Fixed a blocking `Config` validation error: the 12 MiB `maxAudioBytes` default violated the old 1 MiB step relative to the 256 KiB minimum. Removed the schema step so the shipped default and the settings inputs validate.
+- Added `scripts/test-config-schema.mjs`, which now parses `Config({})` and the shipped defaults before release.
+- Settings changes now apply live: saving `enabled` or `language` broadcasts to the mounted fish-ear, hides it when disabled, and stops the native shortcut from starting a recording.
+- Added request-scoped cancellation. Cancelling a queued request no longer kills the worker serving another session; `close()` invalidates queued work.
+- Added visible keyboard focus to the three numeric settings inputs.
+- `statusCopy` now shows “已停用” instead of “已就绪” when the plugin is disabled.
+- Numeric config patches now require real integers instead of accepting booleans, `null`, or numeric strings.
+- Removed the undeclared `settings.plugin.item` slot registration; the supported slots are `plugins.bundle.config` and `settings.plugins.tab`.
+- Marked `Config` fields volatile at construction instead of mutating the exported schema.
+- Weakened the auto-send success copy so a host that silently refuses `submit()` does not produce a false “delivered” claim.
+
 ## 0.2.5
 
 - Exported the Schemastery `Config` schema so DSH can persist setting changes from the panel.

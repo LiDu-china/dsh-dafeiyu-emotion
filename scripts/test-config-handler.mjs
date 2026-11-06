@@ -96,6 +96,9 @@ async function call(handler, req) {
   assert.throws(() => normalizeConfigPatch({ language: 'fr' }), /language/)
   assert.throws(() => normalizeConfigPatch({ backendRoot: 'C:\\bad\u0000path' }), /本地路径/)
   assert.throws(() => normalizeConfigPatch(null), /对象/)
+  assert.throws(() => normalizeConfigPatch({ maxAudioBytes: true }), /整数/)
+  assert.throws(() => normalizeConfigPatch({ maxAudioBytes: 1024.5 }), /整数/)
+  assert.throws(() => normalizeConfigPatch({ startupTimeoutMs: '12000' }), /整数/)
 }
 
 // GET returns the current runtime values.
@@ -183,6 +186,11 @@ async function call(handler, req) {
   })
   const invalid = await call(handler, makeReq({ method: 'PATCH', body: undefined }))
   assert.equal(invalid.status, 400)
+  const tooLarge = await call(handler, makeReq({
+    method: 'PATCH',
+    body: { backendRoot: 'x'.repeat(20000) },
+  }))
+  assert.equal(tooLarge.status, 413)
 }
 
 console.log('config handler tests passed')
