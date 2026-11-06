@@ -17,7 +17,7 @@
 
 - Exported the Schemastery `Config` schema so DSH can persist setting changes from the panel.
 - Marked every config field volatile, matching the DSH settings service contract.
-- 0.2.4 shipped the settings UI; on hosts that require a registered volatile schema, saving failed. Install 0.2.5 for the full read/write path.
+- 0.2.4 shipped the settings UI; on hosts that require a registered volatile schema, saving failed. 0.2.5 added the schema but its 1 MiB step rejected the 12 MiB default; install 0.2.6 instead.
 
 ## 0.2.4
 
