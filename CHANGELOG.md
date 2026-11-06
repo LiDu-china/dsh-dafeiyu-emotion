@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+- Fixed `backendRoot` showing as `[object Object]` on the settings page. DSH projects volatile `Config` fields as `{ get() }` refs; `readSettings()` and `resolveOptions()` now unwrap them before path/string/number handling.
+- Added `plainConfig` regression coverage so a volatile ref can never be stringified into a fake path again.
+
 ## 0.2.7
 
 - Fixed a host activation failure: `apply` read `ctx.settings` while the plugin only declared `webServer`. Cordis throws `cannot get property "settings" without inject`, so the whole host plugin failed to mount and `/plugins/dsh-dafeiyu-emotion/config` returned 404.

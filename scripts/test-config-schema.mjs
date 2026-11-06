@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { Config } from '../src/index.js'
+import { Config, plainConfig, resolveOptions } from '../src/index.js'
 
 // The DSH settings service parses the schema with its defaults before a plugin
 // row can become configurable. A default that violates its own step/min/max
@@ -49,5 +49,31 @@ assert.throws(
   /language/,
   'unknown languages must be rejected by the schema',
 )
+
+// DSH projects volatile fields as { get() } refs. They must be unwrapped
+// before path resolution; otherwise backendRoot becomes "[object Object]".
+{
+  const ref = (value) => ({ get: () => value })
+  assert.deepEqual(
+    plainConfig({
+      backendRoot: ref('D:/voice-sense'),
+      nested: { language: ref('auto') },
+    }),
+    {
+      backendRoot: 'D:/voice-sense',
+      nested: { language: 'auto' },
+    },
+  )
+  const options = resolveOptions({
+    backendRoot: ref('D:/voice-sense'),
+    pythonPath: ref(''),
+    language: ref('auto'),
+    maxAudioBytes: ref(8 * 1024 * 1024),
+  })
+  assert.equal(options.backendRoot.includes('[object Object]'), false)
+  assert.ok(options.backendRoot.endsWith('voice-sense'))
+  assert.equal(options.language, 'auto')
+  assert.equal(options.maxAudioBytes, 8 * 1024 * 1024)
+}
 
 console.log('config schema tests passed')

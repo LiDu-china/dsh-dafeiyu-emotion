@@ -137,17 +137,32 @@ function asNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback
 }
 
+/**
+ * DSH settings projects volatile Config fields as live refs (`{ get() }`).
+ * Unwrap them before path/string/number handling, otherwise String(ref)
+ * becomes "[object Object]" and a path is resolved into the profile cwd.
+ */
+function plainConfig(value) {
+  if (value && typeof value.get === 'function') return plainConfig(value.get())
+  if (Array.isArray(value)) return value.map(plainConfig)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfig(child)]))
+  }
+  return value
+}
+
 function resolveOptions(raw = {}) {
+  const value = plainConfig(raw)
   return {
-    enabled: raw.enabled !== false,
-    backendRoot: String(raw.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot).trim()
-      ? resolve(String(raw.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot))
+    enabled: value.enabled !== false,
+    backendRoot: String(value.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot).trim()
+      ? resolve(String(value.backendRoot || process.env.DSH_DAFEIYU_EMOTION_BACKEND || DEFAULTS.backendRoot))
       : '',
-    pythonPath: String(raw.pythonPath || '').trim(),
-    language: ['zh', 'en', 'auto'].includes(raw.language) ? raw.language : DEFAULTS.language,
-    maxAudioBytes: Math.min(32 * 1024 * 1024, Math.max(256 * 1024, asNumber(raw.maxAudioBytes, DEFAULTS.maxAudioBytes))),
-    startupTimeoutMs: Math.min(600000, Math.max(10000, asNumber(raw.startupTimeoutMs, DEFAULTS.startupTimeoutMs))),
-    requestTimeoutMs: Math.min(600000, Math.max(10000, asNumber(raw.requestTimeoutMs, DEFAULTS.requestTimeoutMs))),
+    pythonPath: String(value.pythonPath || '').trim(),
+    language: ['zh', 'en', 'auto'].includes(value.language) ? value.language : DEFAULTS.language,
+    maxAudioBytes: Math.min(32 * 1024 * 1024, Math.max(256 * 1024, asNumber(value.maxAudioBytes, DEFAULTS.maxAudioBytes))),
+    startupTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.startupTimeoutMs, DEFAULTS.startupTimeoutMs))),
+    requestTimeoutMs: Math.min(600000, Math.max(10000, asNumber(value.requestTimeoutMs, DEFAULTS.requestTimeoutMs))),
   }
 }
 
@@ -209,7 +224,7 @@ function readSettings(service) {
   try {
     const entry = service.describe().find((row) => row?.ns === SETTINGS_NAMESPACE)
     if (!entry) return null
-    return { ...(entry.value || {}), ...(entry.user || {}) }
+    return plainConfig({ ...(entry.value || {}), ...(entry.user || {}) })
   } catch {
     return null
   }
@@ -1032,6 +1047,8 @@ export {
   createConfigHandler,
   decorateAnalysis,
   normalizeConfigPatch,
+  plainConfig,
   publicConfig,
+  resolveOptions,
   transcribeWithSpeech,
 }

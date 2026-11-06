@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-emotion",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "大肥鱼语音情绪耳朵：听语气、识别情绪，并让 DSH 按对方当下的状态自然回复。 · Voice + emotion-aware companion for DeepSeek Harness.",
   "type": "module",
   "main": "src/index.js",
