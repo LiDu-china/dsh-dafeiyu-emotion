@@ -124,9 +124,9 @@ dsh plugin --profile desktop add github:LiDu-china/dsh-dafeiyu-emotion
 ### 通过 Release tarball
 
 ```bash
-curl -L -o dsh-dafeiyu-emotion-0.3.2.tgz \
-  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.2/dsh-dafeiyu-emotion-0.3.2.tgz
-dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.2.tgz"
+curl -L -o dsh-dafeiyu-emotion-0.3.4.tgz \
+  https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.3.4/dsh-dafeiyu-emotion-0.3.4.tgz
+dsh plugin --profile desktop add "D:/path/to/dsh-dafeiyu-emotion-0.3.4.tgz"
 ```
 
 > DSH Desktop 的 profile 由 Electron 应用管理；命令行安装请使用桌面应用自带的 `dsh` 命令。

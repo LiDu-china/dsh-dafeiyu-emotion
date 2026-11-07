@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4 — 2026-11-07
+
+- Fixed the DSH package-metadata error `icon exceeds 256 KiB`: compressed `assets/icon-512.png` from 308,711 bytes to 38,338 bytes while keeping the 512×512 canvas and transparency.
+- Added `scripts/test-package-metadata.mjs`, which fails the test suite when the declared package icon is missing or larger than 256 KiB.
+
 ## 0.3.3 — 2026-11-07
 
 - Added `petReactionEnabled` (default on): while a spoken reply plays, the local `dsh-dafeiyu` pet enters its thinking animation; when playback ends it plays the success celebration. The bridge uses a fake session id on the public session event bus, never mutates the real session, auto-cleans after 2.6 s and has a 60 s safety end.
