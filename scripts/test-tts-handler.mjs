@@ -6,6 +6,7 @@ import {
   apply,
   assistantTextFromEvent,
   cleanForSpeech,
+  ttsReady,
 } from '../src/index.js'
 
 const TTS = '/plugins/dsh-dafeiyu-emotion/tts'
@@ -116,7 +117,7 @@ function json(res) {
   assert.match(cleaned, /重点/)
 }
 
-// TTS is off by default and reports a clear 503.
+// An explicitly disabled TTS reports a clear 503.
 {
   const { ctx, handlers } = makeCtx()
   apply(ctx, { enabled: true, backendRoot: '', ttsEnabled: false })
@@ -124,6 +125,26 @@ function json(res) {
   await handlers.get(TTS)(makeReq({ body: { text: '你好' } }), res)
   assert.equal(res.status, 503)
   assert.match(json(res).error, /语音回复已关闭/)
+}
+
+// A bare command name is resolved through PATH; existsSync alone would call it
+// unavailable even though edge-tts is installed.
+{
+  assert.equal(
+    ttsReady({ ttsEnabled: true, ttsEngine: 'edge', ttsCommand: 'node' }),
+    true,
+    'a real PATH command must count as ready',
+  )
+  assert.equal(
+    ttsReady({ ttsEnabled: true, ttsEngine: 'edge', ttsCommand: 'definitely-not-a-real-command-xyz' }),
+    false,
+    'a missing PATH command must not count as ready',
+  )
+  assert.equal(
+    ttsReady({ ttsEnabled: true, ttsEngine: 'piper', ttsPiperModel: 'D:/missing-piper-model.onnx' }),
+    false,
+    'a missing Piper model must count as unavailable',
+  )
 }
 
 // Invalid voice/text is rejected before spawning edge-tts.
@@ -186,6 +207,60 @@ function json(res) {
   )
   assert.ok(res.chunks.some((chunk) => chunk.includes('"kind":"assistant"')))
   assert.ok(res.chunks.some((chunk) => chunk.includes('你好，我是大肥鱼。')))
+  res.emit('close')
+}
+
+// Disabling the plugin stops the spoken-reply stream even when TTS is on.
+{
+  const { ctx, handlers, emitSession } = makeCtx()
+  apply(ctx, {
+    enabled: false,
+    backendRoot: '',
+    ttsEnabled: true,
+    ttsOnlyAfterVoice: false,
+    ttsEngine: 'browser',
+  })
+  const res = makeRes()
+  await handlers.get(EVENTS)(makeReq({ method: 'GET' }), res)
+  emitSession(
+    { header: { id: 'session-1' } },
+    {
+      type: 'assistant/message',
+      data: { message: { content: [{ type: 'text', text: '停用后不该朗读。' }] } },
+    },
+  )
+  assert.equal(
+    res.chunks.some((chunk) => chunk.includes('停用后不该朗读')),
+    false,
+    'a disabled plugin must not broadcast assistant text',
+  )
+  res.emit('close')
+}
+
+// An event with no session id must not leak into every open window.
+{
+  const { ctx, handlers, emitSession } = makeCtx()
+  apply(ctx, {
+    enabled: true,
+    backendRoot: '',
+    ttsEnabled: true,
+    ttsOnlyAfterVoice: false,
+    ttsEngine: 'browser',
+  })
+  const res = makeRes()
+  await handlers.get(EVENTS)(makeReq({ method: 'GET' }), res)
+  emitSession(
+    {},
+    {
+      type: 'assistant/message',
+      data: { message: { content: [{ type: 'text', text: '没有会话 id 的回复。' }] } },
+    },
+  )
+  assert.equal(
+    res.chunks.some((chunk) => chunk.includes('没有会话 id 的回复')),
+    false,
+    'an unscoped assistant event must stay out of the shared stream',
+  )
   res.emit('close')
 }
 

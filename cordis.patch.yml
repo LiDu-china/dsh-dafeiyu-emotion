@@ -1,4 +1,29 @@
 - insert:
+    # Emotion mounts before the pet so its top-level HelperProcess.start hook
+    # is in place when dsh-dafeiyu creates the desktop bridge.
+    - id: dsh-dafeiyu-emotion
+      name: dsh-dafeiyu-emotion
+      config:
+        enabled: true
+        backendRoot: ""
+        pythonPath: ""
+        language: zh
+        empathyStyle: gentle
+        ttsEnabled: true
+        ttsEmotionAdapt: true
+        petReactionEnabled: true
+        petSayEnabled: true
+        ttsOnlyAfterVoice: true
+        ttsEngine: piper
+        ttsVoice: zh-CN-XiaoyiNeural
+        ttsRate: "+6%"
+        ttsPitch: "+12Hz"
+        ttsCommand: ""
+        ttsPiperModel: ""
+        ttsPiperCommand: ""
+        maxAudioBytes: 12582912
+        startupTimeoutMs: 180000
+        requestTimeoutMs: 180000
     - id: dsh-dafeiyu
       name: dsh-dafeiyu
       config:
@@ -21,23 +46,3 @@
         clientTarget: auto
         balanceEnabled: true
         balanceSource: auto
-    - id: dsh-dafeiyu-emotion
-      name: dsh-dafeiyu-emotion
-      config:
-        enabled: true
-        backendRoot: ""
-        pythonPath: ""
-        language: zh
-        empathyStyle: gentle
-        ttsEnabled: true
-        ttsOnlyAfterVoice: true
-        ttsEngine: piper
-        ttsVoice: zh-CN-XiaoyiNeural
-        ttsRate: "+6%"
-        ttsPitch: "+12Hz"
-        ttsCommand: ""
-        ttsPiperModel: ""
-        ttsPiperCommand: ""
-        maxAudioBytes: 12582912
-        startupTimeoutMs: 180000
-        requestTimeoutMs: 180000

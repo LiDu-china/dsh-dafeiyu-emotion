@@ -72,8 +72,14 @@ async function call(handler, req) {
   const value = publicConfig(baseOptions(), true)
   assert.equal(value.enabled, true)
   assert.equal(value.language, 'zh')
+  assert.equal(value.ttsEmotionAdapt, true)
+  assert.equal(value.petReactionEnabled, true)
+  assert.equal(value.petSayEnabled, true)
   assert.equal(value.writable, true)
   assert.equal('token' in value, false)
+  assert.equal(publicConfig(baseOptions({ ttsEmotionAdapt: false })).ttsEmotionAdapt, false)
+  assert.equal(publicConfig(baseOptions({ petReactionEnabled: false })).petReactionEnabled, false)
+  assert.equal(publicConfig(baseOptions({ petSayEnabled: false })).petSayEnabled, false)
 }
 
 // Known fields are normalized and clamped.
@@ -83,6 +89,9 @@ async function call(handler, req) {
     language: 'EN',
     empathyStyle: 'DIRECT',
     ttsEnabled: true,
+    ttsEmotionAdapt: false,
+    petReactionEnabled: false,
+    petSayEnabled: false,
     ttsOnlyAfterVoice: false,
     ttsEngine: 'BROWSER',
     ttsVoice: 'zh-CN-XiaoxiaoNeural',
@@ -98,6 +107,9 @@ async function call(handler, req) {
   assert.equal(patch.language, 'en')
   assert.equal(patch.empathyStyle, 'direct')
   assert.equal(patch.ttsEnabled, true)
+  assert.equal(patch.ttsEmotionAdapt, false)
+  assert.equal(patch.petReactionEnabled, false)
+  assert.equal(patch.petSayEnabled, false)
   assert.equal(patch.ttsOnlyAfterVoice, false)
   assert.equal(patch.ttsEngine, 'browser')
   assert.equal(patch.ttsVoice, 'zh-CN-XiaoxiaoNeural')
@@ -119,6 +131,9 @@ async function call(handler, req) {
   assert.throws(() => normalizeConfigPatch({ ttsEngine: 'cloud' }), /ttsEngine/)
   assert.throws(() => normalizeConfigPatch({ ttsVoice: 'bad' }), /ttsVoice/)
   assert.throws(() => normalizeConfigPatch({ ttsRate: '6%' }), /ttsRate/)
+  assert.throws(() => normalizeConfigPatch({ ttsEmotionAdapt: 'yes' }), /ttsEmotionAdapt/)
+  assert.throws(() => normalizeConfigPatch({ petReactionEnabled: 'yes' }), /petReactionEnabled/)
+  assert.throws(() => normalizeConfigPatch({ petSayEnabled: 'yes' }), /petSayEnabled/)
   assert.throws(() => normalizeConfigPatch({ backendRoot: 'C:\\bad\u0000path' }), /本地路径/)
   assert.throws(() => normalizeConfigPatch(null), /对象/)
   assert.throws(() => normalizeConfigPatch({ maxAudioBytes: true }), /整数/)

@@ -22,6 +22,9 @@ assert.doesNotThrow(
     language: 'auto',
     empathyStyle: 'direct',
     ttsEnabled: true,
+    ttsEmotionAdapt: true,
+    petReactionEnabled: true,
+    petSayEnabled: true,
     ttsOnlyAfterVoice: true,
     ttsEngine: 'edge',
     ttsVoice: 'zh-CN-XiaoyiNeural',
@@ -43,6 +46,9 @@ for (const key of [
   'language',
   'empathyStyle',
   'ttsEnabled',
+  'ttsEmotionAdapt',
+  'petReactionEnabled',
+  'petSayEnabled',
   'ttsOnlyAfterVoice',
   'ttsEngine',
   'ttsVoice',
@@ -99,6 +105,14 @@ assert.throws(
   assert.equal(options.language, 'auto')
   assert.equal(options.maxAudioBytes, 8 * 1024 * 1024)
   assert.equal(options.empathyStyle, 'gentle')
+  assert.equal(options.ttsEnabled, true, 'a partial config must keep the schema default')
+  assert.equal(options.ttsEmotionAdapt, true, 'emotion-adaptive TTS must default on')
+  assert.equal(options.petReactionEnabled, true, 'pet reaction must default on')
+  assert.equal(options.petSayEnabled, true, 'pet bubble text must default on')
+  assert.equal(resolveOptions({ ttsEnabled: false }).ttsEnabled, false)
+  assert.equal(resolveOptions({ ttsEmotionAdapt: false }).ttsEmotionAdapt, false)
+  assert.equal(resolveOptions({ petReactionEnabled: false }).petReactionEnabled, false)
+  assert.equal(resolveOptions({ petSayEnabled: false }).petSayEnabled, false)
 
   const shared = { x: 1 }
   assert.deepEqual(
@@ -129,6 +143,25 @@ assert.throws(
   assert.match(buildPrompt(analysis, 'direct'), /清晰结论/)
   assert.match(buildPrompt(analysis, 'humorous'), /幽默/)
   assert.match(buildPrompt(analysis, 'concise'), /简短/)
+}
+
+// Low confidence must ask before asserting an emotion; high confidence must not.
+{
+  const base = {
+    transcript: '今天有点累',
+    emotion: 'sad',
+    toneSummary: '低落，语速偏慢',
+  }
+  assert.match(
+    buildPrompt({ ...base, confidence: 0.25 }, 'gentle'),
+    /不要断言|先.*确认/,
+    'low confidence must ask before asserting',
+  )
+  assert.doesNotMatch(
+    buildPrompt({ ...base, confidence: 0.8 }, 'gentle'),
+    /不要断言/,
+    'high confidence should not add the ask-first clause',
+  )
 }
 
 console.log('config schema tests passed')

@@ -10,6 +10,7 @@ assert.equal(inject.includes('settings'), false, 'settings must be resolved dyna
 const ANALYZE = '/plugins/dsh-dafeiyu-emotion/analyze'
 const HEALTH = '/plugins/dsh-dafeiyu-emotion/health'
 const CONTEXT = '/plugins/dsh-dafeiyu-emotion/context'
+const EVENTS = '/plugins/dsh-dafeiyu-emotion/events'
 
 function makeCtx(speechToText) {
   const handlers = new Map()
@@ -61,10 +62,11 @@ function makeCtx(speechToText) {
   return { ctx, handlers }
 }
 
-function makeReq({ body, method = 'POST', remoteAddress = '127.0.0.1' } = {}) {
+function makeReq({ body, method = 'POST', remoteAddress = '127.0.0.1', url = '/' } = {}) {
   const payload = body === undefined ? '' : JSON.stringify(body)
   const req = Readable.from([Buffer.from(payload)])
   req.method = method
+  req.url = url
   req.socket = { remoteAddress }
   req.headers = { host: '127.0.0.1:13344' }
   return req
@@ -76,9 +78,14 @@ function makeRes() {
   res.status = 0
   res.headers = null
   res.payload = null
+  res.chunks = []
   res.writeHead = (status, headers) => {
     res.status = status
     res.headers = headers
+  }
+  res.write = (chunk) => {
+    res.chunks.push(String(chunk))
+    return true
   }
   res.end = (payload) => {
     res.payload = payload
@@ -241,8 +248,98 @@ async function call(handler, req) {
   const payload = json(health)
   assert.equal(payload.mode, 'dsh-speech-prosody')
   assert.equal(payload.dshSpeechReady, true)
+  assert.equal(payload.ttsEmotionAdapt, true)
+  assert.equal(payload.petReactionEnabled, true)
+  assert.equal(payload.petSayEnabled, true)
+  assert.equal(typeof payload.petBridgeReady, 'boolean')
   assert.equal(payload.speechProvider, 'sensevoice')
   assert.equal(payload.speechPhase, 'ready')
+  assert.ok(
+    handlers.has('/plugins/dsh-dafeiyu-emotion/privacy/cleanup'),
+    'the privacy cleanup route must be registered',
+  )
+  assert.ok(
+    handlers.has('/plugins/dsh-dafeiyu-emotion/pet/reaction'),
+    'the pet reaction route must be registered',
+  )
+}
+
+// Two analyses in one session build a local trend and a per-session context.
+{
+  const speechToText = {
+    snapshot: () => ({
+      providers: [{ id: 'sensevoice', preparation: { phase: 'ready' } }],
+      selection: { providerId: 'sensevoice' },
+    }),
+    resolve(args) {
+      return { provider: { id: args.providerId }, audio: args.audio, language: args.language }
+    },
+    async transcribe() {
+      return { text: '今天有点累' }
+    },
+  }
+  const { ctx, handlers } = makeCtx(speechToText)
+  apply(ctx, { enabled: true, backendRoot: '' })
+  const eventsRes = makeRes()
+  await handlers.get(EVENTS)(makeReq({ method: 'GET' }), eventsRes)
+
+  const first = await call(handlers.get(ANALYZE), makeReq({
+    body: {
+      audioBase64: validWav().toString('base64'),
+      sessionId: 's1',
+      prosody: {
+        duration: 2,
+        voiced_ratio: 0.8,
+        pause_ratio: 0.1,
+        energy_n: 0.8,
+        pitch_n: 0.9,
+        var_n: 0.7,
+        f0_median: 240,
+        f0_std_st: 4,
+      },
+    },
+  }))
+  assert.equal(first.status, 200)
+  assert.equal(json(first).trend.samples, 1)
+
+  const second = await call(handlers.get(ANALYZE), makeReq({
+    body: {
+      audioBase64: validWav().toString('base64'),
+      sessionId: 's1',
+      prosody: {
+        duration: 2,
+        voiced_ratio: 0.4,
+        pause_ratio: 0.4,
+        energy_n: 0.2,
+        pitch_n: 0.2,
+        var_n: 0.2,
+        f0_median: 140,
+        f0_std_st: 1,
+      },
+    },
+  }))
+  assert.equal(second.status, 200)
+  assert.equal(json(second).trend.samples, 2)
+  assert.ok(
+    eventsRes.chunks.some((chunk) => chunk.includes('"kind":"context"') && chunk.includes('"sessionId":"s1"')),
+    'a successful analysis must publish a context SSE frame',
+  )
+  eventsRes.emit('close')
+
+  const context = await call(handlers.get(CONTEXT), makeReq({
+    method: 'GET',
+    url: '/plugins/dsh-dafeiyu-emotion/context?session=s1',
+  }))
+  assert.equal(context.status, 200)
+  assert.equal(json(context).history.length, 2)
+  assert.equal(json(context).trend.samples, 2)
+
+  const other = await call(handlers.get(CONTEXT), makeReq({
+    method: 'GET',
+    url: '/plugins/dsh-dafeiyu-emotion/context?session=other',
+  }))
+  assert.equal(json(other).lastAnalysis, null)
+  assert.deepEqual(json(other).history, [])
 }
 
 console.log('analyze handler ok')

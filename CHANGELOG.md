@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.3 — 2026-11-07
+
+- Added `petReactionEnabled` (default on): while a spoken reply plays, the local `dsh-dafeiyu` pet enters its thinking animation; when playback ends it plays the success celebration. The bridge uses a fake session id on the public session event bus, never mutates the real session, auto-cleans after 2.6 s and has a 60 s safety end.
+- Added `petSayEnabled` (default on): reply text is typed into the pet bubble through the local `dsh-dafeiyu` HelperProcess bridge (`state` THINKING, repeated `task` messages, final `pulse` SUCCESS). The emotion bundle mounts before the pet so a `HelperProcess.start` hook can capture the bridge; old installs need a reinstall/restart. This bypasses the reducer's session selection and multi-task card. It is bubble text, not a new speaking animation — true lip-sync still needs new pet art/animation frames.
+- Pet reaction lifecycle is now idempotent: duplicate `end` is ignored, `end` still works after the feature is disabled, the safety end is 180 s, unmount/session switch sends the end, and host teardown sends IDLE to any active bridge.
+- Fixed `/context?session=` returning another session's last analysis, the 3-sample trend comparing against zero, saving baseline-adjusted energy/pause as the next baseline, emotion-adaptive TTS falling back to neutral after the post-send reset, the global (not per-session) `ttsOnlyAfterVoice` window, bare-command `ttsReady` false positives, and the over-broad privacy cleanup prefix.
+- Added `POST /plugins/dsh-dafeiyu-emotion/pet/reaction` (`start` / `end`) for the client-side TTS lifecycle. `start` may carry the reply text for the local pet bubble; audio is never sent, and `end` sends only the phase/session id.
+- Fixed a stale TTS failure falling back to browser speech after a newer reply started, which could end the newer pet reaction early.
+- Added a per-result emotion evidence card: speech rate, pause ratio, pitch range, energy, text-vs-prosody source, confidence and the low-confidence ask-first note.
+- Added a one-click personal baseline from the evidence card, stored locally and sent with later analyses; the lightweight analyzer now normalizes pitch, energy, pause and pitch variation against that baseline.
+- Added a per-session emotion trend (`更紧绷` / `更放松` / `更积极` / `更低落`) after three analyses, exposed in the analyze response, the evidence card and `/context`.
+- `/context` now accepts `?session=` and returns `history` plus `trend`; `GET /events` also emits `kind: "context"` for other plugins.
+- `buildPrompt` now adds an explicit “do not assert, confirm first” clause when confidence is below 0.4.
+- Added emotion-adaptive TTS (`ttsEmotionAdapt`, default on): the reply voice nudges rate and pitch from the last detected emotion — brighter for happy, slower and lower for sad.
+- Added a privacy-panel cleanup action and `POST /plugins/dsh-dafeiyu-emotion/privacy/cleanup` to remove orphaned plugin temp directories older than ten minutes.
+- Fixed partial configs disabling TTS even though the schema default is `true`; a missing `ttsEnabled` now keeps the documented local-Piper default.
+- Fixed a disabled plugin still broadcasting assistant text to the spoken-reply stream when TTS was left enabled.
+- Fixed assistant events without a session id leaking into every open DSH window; unscoped events are now ignored.
+- Fixed bare `edge-tts` / `piper` commands being reported unavailable by `/health` just because `existsSync()` cannot see PATH.
+- Fixed a host that returns `false` from `submit()` being treated as a successful delivery; the result now offers retry instead of hiding the send button.
+
 ## 0.3.2
 
 - Added `ttsOnlyAfterVoice` (default `true`): spoken replies are limited to assistant messages within two minutes of a voice input, so normal coding chats do not read every answer aloud.

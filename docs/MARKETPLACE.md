@@ -41,9 +41,12 @@ https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-d
 3. 优先复用 DSH 自带 Voice Input/SenseVoice 做本地转写；
 4. 浏览器提取语速、停顿、基频、音高变化、能量等声学特征；
 5. 可选中英文情绪词表与声学原型融合，输出情绪、置信度、愉悦度、唤醒度；
-6. 生成“先承接情绪、再回答问题”的受控 prompt；
+6. 生成“先承接情绪、再回答问题”的受控 prompt；可展开情绪证据卡，置信度低时先追问确认；
 7. 自动填入并发送到当前会话；
-8. 如果本机部署了 VoiceSense，可切换到 SenseVoice + emotion2vec 增强模式。
+8. 可用一次平静说话设置个人基线，轻量模式按个人音高/能量归一化；
+9. 连续几次语音后生成会话趋势，并通过 `/context` 与 `kind:"context"` SSE 提供给其他插件；
+10. 朗读回复时通过本地 HelperProcess 协议驱动 `dsh-dafeiyu`：思考 → 逐字气泡 → 庆祝；音频从不发送；
+11. 如果本机部署了 VoiceSense，可切换到 SenseVoice + emotion2vec 增强模式。
 
 插件不常驻监听、不读屏幕、不声称读心。音频只进入本机临时目录，分析结束后删除。
 
@@ -65,6 +68,7 @@ https://github.com/LiDu-china/dsh-dafeiyu-emotion/releases/download/v0.2.3/dsh-d
 - Microphone permission
 - Lightweight mode: enable DSH Voice Input and prepare its local model
 - Enhanced mode: a local VoiceSense checkout with `.venv-ser` and cached models
+- Optional pet reaction: `dsh-dafeiyu` 0.1.23+ and the emotion plugin mounted first (the bundled patch does this; reinstall/restart old installs)
 
 ## Install
 
@@ -77,6 +81,8 @@ Published as `dsh-dafeiyu-emotion@0.3.2` on npm. The 1024Store entry refreshes i
 ## Privacy
 
 No audio upload. No screen capture. No persistent microphone. Temporary WAV is deleted after analysis.
+
+The optional pet reaction sends `start` / `end`, a session id, and (on `start`) the reply text to the local host so the pet can type it into its bubble. Audio is never sent to the pet, and the text is never uploaded to a cloud service.
 
 ## Maintainer
 

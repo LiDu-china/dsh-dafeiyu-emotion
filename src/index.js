@@ -1,11 +1,36 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
+
+// Capture the dsh-dafeiyu helper bridge before it starts. The emotion plugin
+// is inserted before dsh-dafeiyu in cordis.patch.yml; importing the package
+// here loads the same HelperProcess class and the prototype hook is in place
+// by the time the pet mounts. Missing/broken pet installs leave this inert.
+let petBridge
+try {
+  const { HelperProcess } = await import('dsh-dafeiyu')
+  const prototype = HelperProcess?.prototype
+  if (prototype?.start && !prototype.__dafeiyuEmotionBridgePatched) {
+    const originalStart = prototype.start
+    prototype.start = function startWithEmotionBridge() {
+      petBridge = this
+      return originalStart.call(this)
+    }
+    const originalStop = prototype.stop
+    if (typeof originalStop === 'function') {
+      prototype.stop = function stopWithEmotionBridge(...args) {
+        if (petBridge === this) petBridge = null
+        return originalStop.apply(this, args)
+      }
+    }
+    prototype.__dafeiyuEmotionBridgePatched = true
+  }
+} catch {}
 
 export const name = 'dsh-dafeiyu-emotion'
 export const inject = ['webServer']
@@ -16,6 +41,12 @@ const CONFIG_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/config'
 const CONTEXT_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/context'
 const TTS_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/tts'
 const EVENTS_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/events'
+const PRIVACY_CLEANUP_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/privacy/cleanup'
+const PET_REACTION_ENDPOINT = '/plugins/dsh-dafeiyu-emotion/pet/reaction'
+const PET_REPLY_SESSION_SUFFIX = '::emotion-reply'
+const PET_SAY_MAX_CHARS = 160
+const PET_SAY_STEP = 2
+const PET_SAY_INTERVAL_MS = 70
 const SETTINGS_NAMESPACE = 'dsh-dafeiyu-emotion'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -31,6 +62,9 @@ const DEFAULTS = Object.freeze({
   requestTimeoutMs: 180000,
   empathyStyle: 'gentle',
   ttsEnabled: true,
+  ttsEmotionAdapt: true,
+  petReactionEnabled: true,
+  petSayEnabled: true,
   ttsOnlyAfterVoice: true,
   ttsEngine: 'piper',
   ttsVoice: 'zh-CN-XiaoyiNeural',
@@ -81,6 +115,9 @@ export const Config = Schema.object({
     Schema.const('concise').description('简洁'),
   ]).default('gentle').description('共情策略').volatile(),
   ttsEnabled: Schema.boolean().default(true).description('朗读大肥鱼回复').volatile(),
+  ttsEmotionAdapt: Schema.boolean().default(true).description('按情绪调整语速和音调').volatile(),
+  petReactionEnabled: Schema.boolean().default(true).description('朗读时让桌面大肥鱼互动').volatile(),
+  petSayEnabled: Schema.boolean().default(true).description('朗读时把回复文本逐字显示在气泡里').volatile(),
   ttsOnlyAfterVoice: Schema.boolean().default(true).description('只朗读语音触发的回复').volatile(),
   ttsEngine: Schema.union([
     Schema.const('piper').description('Piper 本地模型（推荐）'),
@@ -242,8 +279,38 @@ async function synthesizePiper(text, options) {
 function ttsReady(options) {
   if (!options.ttsEnabled) return false
   if (options.ttsEngine === 'browser') return true
-  if (options.ttsEngine === 'piper') return existsSync(resolvePiperModel(options))
-  return existsSync(resolveEdgeTts(options))
+  if (options.ttsEngine === 'piper') {
+    if (!existsSync(resolvePiperModel(options))) return false
+    const command = resolvePiperCommand(options)
+    return commandExists(command)
+  }
+  const command = resolveEdgeTts(options)
+  return commandExists(command)
+}
+
+function isBareCommand(value) {
+  return Boolean(value) && !value.includes('/') && !value.includes('\\') && !/^[A-Za-z]:/.test(value)
+}
+
+const commandCache = new Map()
+
+function commandExists(command) {
+  const value = String(command || '').trim()
+  if (!value) return false
+  if (!isBareCommand(value)) return existsSync(value)
+  const cached = commandCache.get(value)
+  if (cached && Date.now() - cached.at < 60_000) return cached.ok
+  let ok = false
+  try {
+    const probe = spawnSync(
+      process.platform === 'win32' ? 'where' : 'which',
+      [value],
+      { windowsHide: true, stdio: 'ignore' },
+    )
+    ok = probe.status === 0
+  } catch {}
+  commandCache.set(value, { ok, at: Date.now() })
+  return ok
 }
 
 function assistantTextFromEvent(event) {
@@ -366,6 +433,204 @@ function createTtsHandler(runtime) {
   }
 }
 
+function createPrivacyCleanupHandler(runtime, getRoot = () => tmpdir()) {
+  return async (req, res) => {
+    if (!isLocalRequest(req)) {
+      jsonResponse(res, 403, { error: '只允许本机访问' })
+      return
+    }
+    if (req.method !== 'POST') {
+      jsonResponse(res, 405, { error: 'method not allowed' })
+      return
+    }
+    try {
+      const root = getRoot()
+      let removed = 0
+      let scanned = 0
+      for (const prefix of ['dsh-dafeiyu-emotion-', 'dsh-dafeiyu-tts-']) {
+        const result = await cleanupTempArtifacts(root, {
+          prefix,
+          minAgeMs: 10 * 60_000,
+        })
+        removed += result.removed.length
+        scanned += result.scanned
+      }
+      const at = new Date().toISOString()
+      runtime.lastCleanupAt = at
+      jsonResponse(res, 200, {
+        ok: true,
+        removed,
+        scanned,
+        at,
+      })
+    } catch (error) {
+      jsonResponse(res, 500, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
+
+/**
+ * Drive the existing dsh-dafeiyu pet through the HelperProcess bridge captured
+ * at mount time. `state` THINKING starts the engagement, `task` messages type
+ * the reply into the bubble without resetting the animation, and `pulse`
+ * SUCCESS celebrates when playback ends. This path bypasses the reducer's
+ * session selection and multi-task card entirely.
+ */
+function createPetReactionHandler(runtime, getBridge = () => petBridge) {
+  return async (req, res) => {
+    if (!isLocalRequest(req)) {
+      jsonResponse(res, 403, { error: '只允许本机访问' })
+      return
+    }
+    if (req.method !== 'POST') {
+      jsonResponse(res, 405, { error: 'method not allowed' })
+      return
+    }
+    try {
+      const body = await readJsonBody(req, 8192)
+      const phase = String(body?.phase || '').trim()
+      const sessionId = String(body?.sessionId || '').trim()
+      const rawText = String(body?.text || '').replace(/\s+/g, ' ').trim()
+      const text = rawText.slice(0, PET_SAY_MAX_CHARS)
+        + (rawText.length > PET_SAY_MAX_CHARS ? '…' : '')
+      if (!['start', 'end'].includes(phase)) {
+        throw new HttpError(400, 'phase 必须是 start 或 end')
+      }
+      if (!sessionId) throw new HttpError(400, '缺少 sessionId')
+
+      const key = `${sessionId}${PET_REPLY_SESSION_SUFFIX}`
+      const stopTimers = () => {
+        const reaction = runtime.petReactionTimers.get(key)
+        if (reaction) {
+          clearTimeout(reaction)
+          runtime.petReactionTimers.delete(key)
+        }
+        const say = runtime.petSayTimers.get(key)
+        if (say) {
+          say.active = false
+          if (say.timer) clearTimeout(say.timer)
+          runtime.petSayTimers.delete(key)
+        }
+      }
+
+      const sendWith = (bridge, kind, payload) => {
+        bridge.send({
+          protocolVersion: 1,
+          kind,
+          timestamp: Date.now(),
+          sessionId,
+          ...payload,
+        })
+      }
+
+      if (phase === 'end') {
+        const active = runtime.petReactionActive.get(key)
+        if (!active) {
+          jsonResponse(res, 200, { ok: true, reacted: false, reason: 'not-active' })
+          return
+        }
+        stopTimers()
+        runtime.petReactionActive.delete(key)
+        try {
+          sendWith(active.bridge, 'pulse', {
+            state: 'SUCCESS',
+            ttlMs: 2200,
+            resumeState: 'IDLE',
+            resumeMessage: '我在这儿等新任务哦',
+            resumeDetail: 'DSH · 等待下一次任务',
+            message: '这一轮说完啦~',
+            detail: '语音回复完成',
+          })
+        } catch {
+          jsonResponse(res, 200, { ok: true, reacted: false, reason: 'emit-failed' })
+          return
+        }
+        jsonResponse(res, 200, { ok: true, reacted: true, phase, sessionId, transport: 'bridge' })
+        return
+      }
+
+      if (!runtime.options.enabled || !runtime.options.petReactionEnabled) {
+        jsonResponse(res, 200, { ok: true, reacted: false, reason: 'disabled' })
+        return
+      }
+      const bridge = getBridge()
+      if (!bridge || typeof bridge.send !== 'function') {
+        jsonResponse(res, 200, { ok: true, reacted: false, reason: 'pet-bridge-unavailable' })
+        return
+      }
+      const send = (kind, payload) => sendWith(bridge, kind, payload)
+
+      stopTimers()
+      runtime.petReactionActive.set(key, { bridge, sessionId })
+      try {
+        send('state', {
+          state: 'THINKING',
+          message: '正在准备朗读…',
+          detail: '大肥鱼准备开口',
+        })
+        if (text && runtime.options.petSayEnabled === true) {
+          const chars = Array.from(text)
+          const sayState = { active: true, timer: null }
+          runtime.petSayTimers.set(key, sayState)
+          let index = 0
+          const tick = () => {
+            if (!sayState.active) return
+            index = Math.min(chars.length, index + PET_SAY_STEP)
+            const chunk = chars.slice(0, index).join('') + (index < chars.length ? '…' : '')
+            try {
+              send('task', {
+                task: `正在说：${chunk}`,
+                message: `正在说：${chunk}`,
+                detail: '正在回复…',
+              })
+            } catch {}
+            if (index < chars.length) {
+              sayState.timer = setTimeout(tick, PET_SAY_INTERVAL_MS)
+              sayState.timer.unref?.()
+            } else {
+              sayState.active = false
+              runtime.petSayTimers.delete(key)
+            }
+          }
+          tick()
+        }
+        const timer = setTimeout(() => {
+          runtime.petReactionTimers.delete(key)
+          runtime.petReactionActive.delete(key)
+          const say = runtime.petSayTimers.get(key)
+          if (say) {
+            say.active = false
+            if (say.timer) clearTimeout(say.timer)
+            runtime.petSayTimers.delete(key)
+          }
+          try {
+            send('state', {
+              state: 'IDLE',
+              message: '我在这儿等新任务哦',
+              detail: 'DSH · 等待下一次任务',
+            })
+          } catch {}
+        }, 180_000)
+        timer.unref?.()
+        runtime.petReactionTimers.set(key, timer)
+      } catch {
+        runtime.petReactionActive.delete(key)
+        stopTimers()
+        jsonResponse(res, 200, { ok: true, reacted: false, reason: 'emit-failed' })
+        return
+      }
+
+      jsonResponse(res, 200, { ok: true, reacted: true, phase, sessionId, transport: 'bridge' })
+    } catch (error) {
+      const status = error instanceof HttpError ? error.status : 500
+      jsonResponse(res, status, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+}
 function createSpeechStream() {
   const clients = new Set()
   return {
@@ -424,6 +689,40 @@ async function readJsonBody(req, limit) {
   }
 }
 
+/**
+ * Remove orphaned plugin temp directories. A crash can leave a `voice.wav`
+ * behind even though the normal request path deletes its temp directory in a
+ * `finally` block; the privacy panel uses this to clear those leftovers.
+ *
+ * Only direct child directories with the plugin prefix are candidates, and a
+ * minimum age keeps an in-flight recording/TTS request safe.
+ */
+async function cleanupTempArtifacts(root = tmpdir(), options = {}) {
+  const prefix = String(options.prefix || 'dsh-dafeiyu-')
+  const minAgeMs = Math.max(0, Number(options.minAgeMs) || 0)
+  const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now()
+  const removed = []
+  let scanned = 0
+  let entries
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch {
+    return { removed, scanned }
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue
+    scanned += 1
+    const path = join(root, entry.name)
+    try {
+      const info = await stat(path)
+      if (now - info.mtimeMs < minAgeMs) continue
+      await rm(path, { recursive: true, force: true })
+      removed.push(entry.name)
+    } catch {}
+  }
+  return { removed, scanned }
+}
+
 function asNumber(value, fallback) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : fallback
@@ -465,7 +764,10 @@ function resolveOptions(raw = {}) {
     empathyStyle: ['gentle', 'direct', 'humorous', 'concise'].includes(value.empathyStyle)
       ? value.empathyStyle
       : DEFAULTS.empathyStyle,
-    ttsEnabled: value.ttsEnabled === true,
+    ttsEnabled: value.ttsEnabled !== false,
+    ttsEmotionAdapt: value.ttsEmotionAdapt !== false,
+    petReactionEnabled: value.petReactionEnabled !== false,
+    petSayEnabled: value.petSayEnabled !== false,
     ttsOnlyAfterVoice: value.ttsOnlyAfterVoice !== false,
     ttsEngine: ['piper', 'edge', 'browser'].includes(value.ttsEngine) ? value.ttsEngine : DEFAULTS.ttsEngine,
     ttsVoice: String(value.ttsVoice || DEFAULTS.ttsVoice).trim(),
@@ -487,7 +789,10 @@ function publicConfig(options, writable = false) {
     pythonPath: options.pythonPath || '',
     language: options.language || DEFAULTS.language,
     empathyStyle: options.empathyStyle || DEFAULTS.empathyStyle,
-    ttsEnabled: options.ttsEnabled === true,
+    ttsEnabled: options.ttsEnabled !== false,
+    ttsEmotionAdapt: options.ttsEmotionAdapt !== false,
+    petReactionEnabled: options.petReactionEnabled !== false,
+    petSayEnabled: options.petSayEnabled !== false,
     ttsOnlyAfterVoice: options.ttsOnlyAfterVoice !== false,
     ttsEngine: options.ttsEngine || DEFAULTS.ttsEngine,
     ttsVoice: options.ttsVoice || DEFAULTS.ttsVoice,
@@ -532,6 +837,21 @@ function normalizeConfigPatch(value) {
     if (key === 'ttsEnabled') {
       if (typeof next !== 'boolean') throw new HttpError(400, 'ttsEnabled 必须是布尔值')
       patch.ttsEnabled = next
+      continue
+    }
+    if (key === 'ttsEmotionAdapt') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'ttsEmotionAdapt 必须是布尔值')
+      patch.ttsEmotionAdapt = next
+      continue
+    }
+    if (key === 'petReactionEnabled') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'petReactionEnabled 必须是布尔值')
+      patch.petReactionEnabled = next
+      continue
+    }
+    if (key === 'petSayEnabled') {
+      if (typeof next !== 'boolean') throw new HttpError(400, 'petSayEnabled 必须是布尔值')
+      patch.petSayEnabled = next
       continue
     }
     if (key === 'ttsOnlyAfterVoice') {
@@ -733,6 +1053,60 @@ function buildToneSummary(analysis) {
   return [base, ...notes].filter(Boolean).join('，')
 }
 
+function round3(value) {
+  return Math.round(value * 1000) / 1000
+}
+
+/**
+ * Compare the most recent three analyses with the three before them. Four
+ * samples are the minimum (one prior group); below that the UI says so instead
+ * of inventing a trend against zero.
+ */
+function buildEmotionTrend(history = []) {
+  const samples = Array.isArray(history)
+    ? history.filter((item) => item
+      && Number.isFinite(Number(item.valence))
+      && Number.isFinite(Number(item.arousal)))
+    : []
+  if (samples.length < 4) {
+    return { label: '还需要更多语音', valenceDelta: 0, arousalDelta: 0, samples: samples.length }
+  }
+  const recent = samples.slice(-3)
+  const previous = samples.slice(-6, -3)
+  const base = previous.length ? previous : samples.slice(0, -3)
+  const average = (items, key) => items.reduce((sum, item) => sum + Number(item[key]), 0) / Math.max(1, items.length)
+  const valenceDelta = round3(average(recent, 'valence') - average(base, 'valence'))
+  const arousalDelta = round3(average(recent, 'arousal') - average(base, 'arousal'))
+  let label = '情绪平稳'
+  if (valenceDelta <= -0.2) label = '比之前更低落'
+  else if (valenceDelta >= 0.2) label = '比之前更积极'
+  if (arousalDelta >= 0.2) label = label === '情绪平稳' ? '比之前更紧绷' : `${label}、更紧绷`
+  else if (arousalDelta <= -0.2) label = label === '情绪平稳' ? '比之前更放松' : `${label}、更放松`
+  return { label, valenceDelta, arousalDelta, samples: samples.length }
+}
+
+function appendEmotionHistory(runtime, sessionId, analysis) {
+  const id = String(sessionId || 'default').trim() || 'default'
+  const bucket = runtime.sessions.get(id) || []
+  bucket.push({
+    emotion: analysis.emotion,
+    emotionZh: analysis.emotionZh,
+    confidence: analysis.confidence,
+    valence: analysis.valence,
+    arousal: analysis.arousal,
+    toneSummary: analysis.toneSummary,
+    source: analysis.source,
+    at: new Date().toISOString(),
+  })
+  while (bucket.length > 12) bucket.shift()
+  runtime.sessions.set(id, bucket)
+  if (runtime.sessions.size > 50) {
+    const oldest = runtime.sessions.keys().next().value
+    if (oldest !== undefined && oldest !== id) runtime.sessions.delete(oldest)
+  }
+  return { sessionId: id, history: bucket, trend: buildEmotionTrend(bucket) }
+}
+
 const EMPATHY_STYLES = Object.freeze({
   gentle: '先自然承接对方的情绪，再回答问题；语气柔和，情绪明显时先共情、后给建议，避免机械说教或过度热情。',
   direct: '先用一句话确认你听到的重点，再给出清晰结论和下一步；直接但不冷漠，不绕弯。',
@@ -744,6 +1118,9 @@ function buildPrompt(analysis, style = 'gentle') {
   const transcript = String(analysis.transcript || '').trim()
   const confidence = numberOrNull(analysis.confidence)
   const confidenceText = confidence === null ? '未知' : `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`
+  const askFirst = confidence !== null && confidence < 0.4
+    ? ' 当前情绪证据偏弱：不要断言对方情绪，先用一句自然的话确认，再回答。'
+    : ''
   const tone = analysis.toneSummary || buildToneSummary(analysis)
   const timeline = Array.isArray(analysis.segments) && analysis.segments.length > 1
     ? `\n情绪走向：${analysis.segments.map((item) => `${EMOTION_ZH[item.emotion] || item.emotion}（${item.text}）`).join(' → ')}`
@@ -755,7 +1132,7 @@ function buildPrompt(analysis, style = 'gentle') {
     '【语音情绪参考｜只用来调整回复方式，不要逐字复述，也不要声称能读心】',
     `主要情绪：${EMOTION_ZH[analysis.emotion] || analysis.emotion || '平静'}（置信度 ${confidenceText}）`,
     `语气特征：${tone}${timeline}`,
-    `回复要求：${EMPATHY_STYLES[style] || EMPATHY_STYLES.gentle}`,
+    `回复要求：${EMPATHY_STYLES[style] || EMPATHY_STYLES.gentle}${askFirst}`,
   ].join('\n')
 }
 
@@ -812,12 +1189,35 @@ function buildFallbackAnalysis(transcript, prosody = {}) {
   if (!text) throw new Error('没有识别到清晰的语音')
   const duration = Math.max(0.1, numberOrNull(prosody.duration) ?? 0.1)
   const speechRate = speechUnits(text) / duration
-  const energyN = clamp01(prosody.energy_n ?? 0.5)
-  const pitchN = clamp01(prosody.pitch_n ?? 0.5)
-  const varN = clamp01(prosody.var_n ?? 0.35)
+  const baseline = prosody.baseline && typeof prosody.baseline === 'object' ? prosody.baseline : null
+  const rawEnergyN = clamp01(prosody.energy_n ?? 0.5)
+  const rawPitchN = clamp01(prosody.pitch_n ?? 0.5)
+  const rawVarN = clamp01(prosody.var_n ?? 0.35)
+  const baselineF0 = numberOrNull(baseline?.f0_median)
+  const pitchValue = numberOrNull(prosody.f0_median)
+  const pitchN = baselineF0 !== null && baselineF0 > 0 && pitchValue !== null && pitchValue > 0
+    ? clamp01(0.5 + (pitchValue / baselineF0 - 1) * 1.2)
+    : rawPitchN
+  const baselineEnergy = numberOrNull(baseline?.energy_n)
+  const energyN = baselineEnergy !== null
+    ? clamp01(0.5 + (rawEnergyN - baselineEnergy) * 1.2)
+    : rawEnergyN
+  const baselinePause = numberOrNull(baseline?.pause_ratio)
+  const rawPauseRatio = clamp01(prosody.pause_ratio ?? 0.2)
+  const pauseRatio = baselinePause !== null
+    ? clamp01(0.2 + (rawPauseRatio - baselinePause) * 1.2)
+    : rawPauseRatio
+  const baselineF0Std = numberOrNull(baseline?.f0_std_st)
+  const f0Std = numberOrNull(prosody.f0_std_st)
+  const varN = baselineF0Std !== null && baselineF0Std > 0 && f0Std !== null
+    ? clamp01(0.5 + (f0Std - baselineF0Std) / 6)
+    : rawVarN
   const rateN = clamp01((speechRate - 1.2) / 4.5)
-  const pauseRatio = clamp01(prosody.pause_ratio ?? 0.2)
   const voicedRatio = clamp01(prosody.voiced_ratio ?? 0)
+  const baselineUsed = (baselineF0 !== null && pitchValue !== null && pitchValue > 0)
+    || baselineEnergy !== null
+    || baselinePause !== null
+    || (baselineF0Std !== null && f0Std !== null)
   const arousal = clamp01(
     0.30 * energyN
     + 0.22 * varN
@@ -869,6 +1269,7 @@ function buildFallbackAnalysis(transcript, prosody = {}) {
   for (const key of Object.keys(features)) {
     if (features[key] === null) delete features[key]
   }
+  if (baselineUsed) features.baseline_used = true
   const confidence = Math.min(0.86, Math.max(0.18, 0.20 + 0.7 * margin + 0.15 * voicedRatio))
   return {
     transcript: text,
@@ -879,6 +1280,12 @@ function buildFallbackAnalysis(transcript, prosody = {}) {
     scores,
     source: hasTextSignal ? 'prosody+text' : 'prosody',
     features,
+    calibration: {
+      f0_median: numberOrNull(prosody.f0_median),
+      f0_std_st: f0Std,
+      energy_n: Math.round(rawEnergyN * 1000) / 1000,
+      pause_ratio: Math.round(rawPauseRatio * 1000) / 1000,
+    },
     segments: [{
       text,
       start: 0,
@@ -1291,7 +1698,7 @@ function speechStatus(service) {
   }
 }
 
-function createAnalyzeHandler(runtime, backend, getSpeechToText) {
+function createAnalyzeHandler(runtime, backend, getSpeechToText, speechStream) {
   return async (req, res) => {
     const options = runtime.options
     if (!isLocalRequest(req)) {
@@ -1365,9 +1772,27 @@ function createAnalyzeHandler(runtime, backend, getSpeechToText) {
         source: analysis.source,
         at: new Date().toISOString(),
       }
+      const sessionId = String(body.sessionId || 'default').trim() || 'default'
+      const history = appendEmotionHistory(runtime, sessionId, analysis)
+      analysis.trend = history.trend
+      runtime.lastContext = {
+        ...runtime.lastAnalysis,
+        sessionId,
+        trend: history.trend,
+      }
+      speechStream?.broadcast({
+        kind: 'context',
+        sessionId,
+        context: runtime.lastContext,
+      })
       runtime.lastAudioBytes = buffer.length
       runtime.lastAnalysisAt = runtime.lastAnalysis.at
       runtime.lastVoiceAt = Date.now()
+      runtime.lastVoiceBySession.set(sessionId, runtime.lastVoiceAt)
+      if (runtime.lastVoiceBySession.size > 50) {
+        const oldest = runtime.lastVoiceBySession.keys().next().value
+        if (oldest !== undefined) runtime.lastVoiceBySession.delete(oldest)
+      }
       jsonResponse(res, 200, analysis)
     } catch (error) {
       if (controller?.signal.aborted || res.writableEnded) return
@@ -1400,6 +1825,12 @@ export function apply(ctx, rawConfig = {}) {
     // shared runtime object and settings.update persists it for the next boot.
     options: resolveOptions(rawConfig),
     lastAnalysis: null,
+    lastContext: null,
+    sessions: new Map(),
+    lastVoiceBySession: new Map(),
+    petReactionActive: new Map(),
+    petReactionTimers: new Map(),
+    petSayTimers: new Map(),
     lastVoiceAt: null,
     lastAudioBytes: 0,
     lastAnalysisAt: null,
@@ -1419,22 +1850,53 @@ export function apply(ctx, rawConfig = {}) {
   })
   ctx.effect(() => () => backend.close())
   ctx.effect(() => () => speechStream.close())
+  ctx.effect(() => () => {
+    for (const timer of runtime.petReactionTimers.values()) clearTimeout(timer)
+    runtime.petReactionTimers.clear()
+    for (const state of runtime.petSayTimers.values()) {
+      state.active = false
+      if (state.timer) clearTimeout(state.timer)
+    }
+    runtime.petSayTimers.clear()
+    for (const active of runtime.petReactionActive.values()) {
+      try {
+        active.bridge.send({
+          protocolVersion: 1,
+          kind: 'state',
+          timestamp: Date.now(),
+          sessionId: active.sessionId,
+          state: 'IDLE',
+          message: '我在这儿等新任务哦',
+          detail: 'DSH · 等待下一次任务',
+        })
+      } catch {}
+    }
+    runtime.petReactionActive.clear()
+  })
 
   ctx.inject(['sessions'], (sessionCtx) => {
     try {
       const off = sessionCtx.on?.('session/event', (session, event) => {
-        if (event?.type !== 'assistant/message' || !runtime.options.ttsEnabled) return
+        const sessionId = String(session?.header?.id ?? session?.id ?? '').trim()
+        if (event?.type !== 'assistant/message' || !runtime.options.enabled || !runtime.options.ttsEnabled) return
+        const lastVoiceAt = runtime.lastVoiceBySession.get(sessionId)
         if (runtime.options.ttsOnlyAfterVoice
-          && (!runtime.lastVoiceAt || Date.now() - runtime.lastVoiceAt > 120000)) return
+          && (!lastVoiceAt || Date.now() - lastVoiceAt > 120000)) return
         const text = cleanForSpeech(assistantTextFromEvent(event))
         if (!text) return
+        if (!sessionId) return
         speechStream.broadcast({
           kind: 'assistant',
-          sessionId: String(session?.header?.id ?? session?.id ?? ''),
+          sessionId,
           text,
         })
       })
       if (typeof off === 'function') ctx.effect(() => off)
+      const offDisposed = sessionCtx.on?.('session/disposed', (session) => {
+        const sessionId = String(session?.header?.id ?? session?.id ?? '').trim()
+        if (sessionId) runtime.lastVoiceBySession.delete(sessionId)
+      })
+      if (typeof offDisposed === 'function') ctx.effect(() => offDisposed)
     } catch (error) {
       logger.warn?.('[dsh-dafeiyu-emotion] failed to subscribe to session events:', error)
     }
@@ -1466,6 +1928,10 @@ export function apply(ctx, rawConfig = {}) {
             language: options.language,
             empathyStyle: options.empathyStyle,
             ttsEnabled: options.ttsEnabled,
+            ttsEmotionAdapt: options.ttsEmotionAdapt,
+            petReactionEnabled: options.petReactionEnabled,
+            petSayEnabled: options.petSayEnabled,
+            petBridgeReady: Boolean(petBridge),
             ttsOnlyAfterVoice: options.ttsOnlyAfterVoice,
             ttsEngine: options.ttsEngine,
             ttsVoice: options.ttsVoice,
@@ -1500,7 +1966,7 @@ export function apply(ctx, rawConfig = {}) {
       () => httpCtx.webServer.register({
         kind: 'exact',
         path: ANALYZE_ENDPOINT,
-        handler: createAnalyzeHandler(runtime, backend, () => speechToText),
+        handler: createAnalyzeHandler(runtime, backend, () => speechToText, speechStream),
       }),
       'dsh-dafeiyu-emotion: 本地语音情绪分析',
     )
@@ -1529,9 +1995,22 @@ export function apply(ctx, rawConfig = {}) {
             jsonResponse(res, 405, { error: 'method not allowed' })
             return
           }
+          let sessionId = 'default'
+          try {
+            const url = new URL(req.url || '/', 'http://localhost')
+            sessionId = String(url.searchParams.get('session') || 'default').trim() || 'default'
+          } catch {}
+          const history = (runtime.sessions.get(sessionId) || []).slice(-10)
+          const trend = buildEmotionTrend(history)
+          const lastAnalysis = history.length
+            ? { ...history[history.length - 1], sessionId, trend }
+            : null
           jsonResponse(res, 200, {
             ok: true,
-            lastAnalysis: runtime.lastAnalysis,
+            sessionId,
+            lastAnalysis,
+            history,
+            trend,
             empathyStyle: runtime.options.empathyStyle,
             language: runtime.options.language,
           })
@@ -1565,17 +2044,38 @@ export function apply(ctx, rawConfig = {}) {
       }),
       'dsh-dafeiyu-emotion: 回复语音事件',
     )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: PRIVACY_CLEANUP_ENDPOINT,
+        handler: createPrivacyCleanupHandler(runtime),
+      }),
+      'dsh-dafeiyu-emotion: 清理本地临时音频',
+    )
+    httpCtx.effect(
+      () => httpCtx.webServer.register({
+        kind: 'exact',
+        path: PET_REACTION_ENDPOINT,
+        handler: createPetReactionHandler(runtime),
+      }),
+      'dsh-dafeiyu-emotion: 桌宠回复互动',
+    )
   })
 
 }
 
 export {
   VoiceBackend,
+  appendEmotionHistory,
   assistantTextFromEvent,
+  buildEmotionTrend,
+  createPetReactionHandler,
   buildFallbackAnalysis,
   buildPrompt,
   cleanForSpeech,
+  cleanupTempArtifacts,
   createConfigHandler,
+  createPrivacyCleanupHandler,
   decorateAnalysis,
   normalizeConfigPatch,
   plainConfig,
